@@ -28,3 +28,26 @@ class Reading:
     def age(self, now: datetime) -> timedelta:
         """How long ago this reading was taken"""
         return now - self.taken_at
+
+
+@dataclass(frozen=True)
+class Probe:
+    """A single temp probe, and the readings it gives"""
+
+    serial: str
+    label: str | None
+    battery_pct: int | None
+    last_seen: datetime
+    sensors: tuple[Reading, ...]
+
+    def core_celsius(self) -> float | None:
+        """Lowest sensor temperature (the coldest point in the meat), or None if no readings."""
+
+        temps = []
+        for r in self.sensors:
+            if r.celsius is not None:
+                temps.append(r.celsius)
+        if temps:
+            return min(temps)
+        else:
+            return None
