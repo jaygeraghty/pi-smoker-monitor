@@ -11,7 +11,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="smoker", description="BBQ smoker monitor and alarm")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     # Step 2: describe what's allowed.
-    # CHANGE 1: keep the slot for command words in a variable...
     commands = parser.add_subparsers(dest="command", metavar="<command>")
     # CHANGE 2: ...so we can add "snapshot" to it (add_parser, not add_argument)
     commands.add_parser("snapshot", help="Print current pit, fan and probe readings")
@@ -26,8 +25,6 @@ def handle_snapshot() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)  # Step 3: read what the user typed
-
-    # CHANGE 3: main() decides which job to run, based on args.command
     if args.command == "snapshot":
         handle_snapshot()
     else:
