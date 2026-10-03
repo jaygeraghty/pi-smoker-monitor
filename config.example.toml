@@ -1,0 +1,32 @@
+# Copy to config.toml (git-ignored) and fill in.
+# Values here are examples, not recommendations.
+
+[eti_cloud]
+email = "you@example.com"
+password = "change-me"
+# Public Firebase client config for cloud.etiltd.com (published at
+# https://cloud.etiltd.com/__/firebase/init.json). Not secrets.
+api_key = "AIzaSyBD4snlT2LllO4k0NywX5qYjJ7M7WfU4_I"
+app_id = "1:701566661301:web:7a9bc711c05985ead144fc"
+referer = "https://cloud.etiltd.com/"
+
+[polling]
+interval_seconds = 30
+
+[display]
+units = "C"   # "C" or "F" — ETI Cloud stores °F; we convert for display
+
+[alarms]
+pit_drift_c = 15            # alarm when pit is this far from the Billows set temp...
+pit_drift_minutes = 5       # ...for this long
+stale_data_minutes = 5      # alarm when no new reading for this long
+probe_battery_low_pct = 15
+
+[notifiers.sound]
+enabled = true
+file = "sounds/alarm.wav"
+
+[notifiers.pushover]
+enabled = false
+app_token = ""
+user_key = ""

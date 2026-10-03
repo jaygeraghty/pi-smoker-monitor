@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-toml
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Belt and braces: refuse to commit a real config file.
+  - repo: local
+    hooks:
+      - id: no-config-toml
+        name: config.toml must not be committed
+        entry: config.toml holds your ETI Cloud login - keep it out of git
+        language: fail
+        files: ^config\.toml$
