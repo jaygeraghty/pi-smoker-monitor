@@ -7,20 +7,7 @@ channel = "stable-25_05"
 expertMode = true
 
 [workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Run smoker monitor"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Run all tests"
+runButton = "Run smoker monitor"
 
 [[workflows.workflow]]
 name = "Run smoker monitor"
