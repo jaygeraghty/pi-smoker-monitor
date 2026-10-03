@@ -1,12 +1,3 @@
-"""Command-line entry point: the `smoker` command.
-
-Planned commands:
-    smoker snapshot   Print current pit, fan and probe readings (milestone 1)
-    smoker run        Run the monitor service: poll, evaluate alarms, notify (milestone 3)
-
-Keep this module thin: parse arguments, load config, call into the package.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -16,16 +7,29 @@ from smoker_monitor import __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Step 1: create the parser (the "menu")
     parser = argparse.ArgumentParser(prog="smoker", description="BBQ smoker monitor and alarm")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_subparsers(dest="command", metavar="<command>")
-    # TODO(milestone 1): add the `snapshot` subcommand.
+    # Step 2: describe what's allowed.
+    # CHANGE 1: keep the slot for command words in a variable...
+    commands = parser.add_subparsers(dest="command", metavar="<command>")
+    # CHANGE 2: ...so we can add "snapshot" to it (add_parser, not add_argument)
+    commands.add_parser("snapshot", help="Print current pit, fan and probe readings")
     return parser
+
+
+def handle_snapshot() -> None:
+    # The actual job. Later this fetches from ETI Cloud; for now, prove the wiring works.
+    print("snapshot!")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
-    if args.command is None:
+    args = parser.parse_args(argv)  # Step 3: read what the user typed
+
+    # CHANGE 3: main() decides which job to run, based on args.command
+    if args.command == "snapshot":
+        handle_snapshot()
+    else:
         parser.print_help()
     return 0
