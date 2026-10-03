@@ -29,3 +29,9 @@ config.toml
 
 # Raw captures from your own account (commit only redacted fixtures)
 captures/
+
+# Replit's own files (editor setup, not part of the project)
+.replit
+replit.nix
+replit.md
+.local/
