@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 
 @dataclass(frozen=True)
 class Reading:
-    """A single temp reading and when it eas taken"""
+    """A single temp reading and when it was taken"""
 
     celsius: float | None
     taken_at: datetime
