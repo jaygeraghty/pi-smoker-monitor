@@ -14,4 +14,17 @@ Design notes:
 - Missing data should be explicit (None / Optional), never a fake 0.
 """
 
-# TODO(milestone 1): implement the models above.
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+
+@dataclass(frozen=True)
+class Reading:
+    """A single temp reading and when it was taken"""
+
+    celsius: float | None
+    taken_at: datetime
+
+    def age(self, now: datetime) -> timedelta:
+        """How long ago this reading was taken"""
+        return now - self.taken_at
