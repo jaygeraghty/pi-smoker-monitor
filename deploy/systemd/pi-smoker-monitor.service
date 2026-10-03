@@ -1,0 +1,20 @@
+# systemd unit (milestone 3). Install on the Pi with:
+#   sudo cp deploy/systemd/pi-smoker-monitor.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pi-smoker-monitor
+# Adjust User and paths to match your Pi.
+
+[Unit]
+Description=pi-smoker-monitor BBQ monitor and alarm
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/pi-smoker-monitor
+ExecStart=/home/pi/pi-smoker-monitor/.venv/bin/smoker run --config /home/pi/pi-smoker-monitor/config.toml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
