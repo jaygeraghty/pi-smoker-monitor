@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from smoker_monitor.domain.models import Probe, Reading, Gateway, Fan
+from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading
 
 TEN_AM = datetime(2026, 10, 3, 10, 0, tzinfo=UTC)
 
