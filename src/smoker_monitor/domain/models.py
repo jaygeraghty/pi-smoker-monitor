@@ -41,6 +41,8 @@ class Probe:
     sensors: tuple[Reading, ...]
 
     def core_celsius(self) -> float | None:
+        """Lowest sensor temperature (the coldest point in the meat), or None if no readings."""
+
         temps = []
         for r in self.sensors:
             if r.celsius is not None:
