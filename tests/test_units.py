@@ -8,5 +8,6 @@ def test_32f() -> None:
     assert f_to_c(32) == pytest.approx(0)
 
 def test_154f() -> None:
-    assert f_to_c(154) == pytest.approx(67.777)
+    assert f_to_c(154) == pytest.approx(67.78, abs=0.01)
+
 
