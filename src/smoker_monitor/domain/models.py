@@ -35,7 +35,7 @@ class Probe:
     """A single temp probe, and the readings it gives"""
 
     serial: str
-    label: str
+    label: str | None
     battery_pct: int | None
     last_seen: datetime
     sensors: tuple[Reading, ...]
