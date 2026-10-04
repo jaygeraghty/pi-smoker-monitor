@@ -182,3 +182,9 @@ def test_snapshot_is_stale() -> None:
     g = gateway(reading(110), fan())
     s = snapshot(g)
     assert s.is_stale(TEN_FIFTEEN, timedelta(minutes=10))
+
+
+def test_snapshot_not_stale_at_exact_limit() -> None:
+    """Boundary: exactly max_age old is not yet stale."""
+    s = snapshot(gateway(reading(110.0), fan()))
+    assert not s.is_stale(TEN_FIFTEEN, timedelta(minutes=15))
