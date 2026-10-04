@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from smoker_monitor.domain.models import Probe, Reading
+from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading
 
 TEN_AM = datetime(2026, 10, 3, 10, 0, tzinfo=UTC)
 
@@ -87,3 +87,62 @@ def test_core_includes_zero_degrees() -> None:
     """Regression: 0.0 is falsy, so a careless `if celsius:` would skip it."""
     p = probe(reading(0.0), reading(5.0))
     assert p.core_celsius() == 0.0
+
+
+def fan(set_temp: float | None = 107.0, connected: bool = True) -> Fan:
+    """Shorthand for a Billows fan; connected at 107°C unless told otherwise."""
+    return Fan(set_temp_celsius=set_temp, state=0, connected=connected)
+
+
+def gateway(pit: Reading | None, fan: Fan | None) -> Gateway:
+    """Shorthand for a Gateway with the given pit reading and fan, plus dummy details."""
+    return Gateway(
+        serial="00:00:00:00:00:00",
+        label=None,
+        battery_pct=100,
+        wifi_dbm=-50,
+        last_seen=TEN_AM,
+        pit=pit,
+        fan=fan,
+    )
+
+
+def test_pit_temp_comes_from_pit_reading() -> None:
+    g = gateway(reading(110.0), fan())
+    assert g.get_pit_temp() == 110.0
+
+
+def test_deviation_positive_when_pit_too_hot() -> None:
+    g = gateway(reading(110.0), fan(set_temp=107.0))
+    assert g.pit_deviation() == pytest.approx(3.0)
+
+
+def test_deviation_negative_when_pit_too_cold() -> None:
+    g = gateway(reading(95.0), fan(set_temp=107.0))
+    assert g.pit_deviation() == pytest.approx(-12.0)
+
+
+def test_deviation_none_without_fan() -> None:
+    g = gateway(reading(110.0), None)
+    assert g.pit_deviation() is None
+
+
+def test_deviation_none_when_fan_disconnected() -> None:
+    """Real data: a disconnected Billows still reported a stale set temp (570)."""
+    g = gateway(reading(110.0), fan(set_temp=570.0, connected=False))
+    assert g.pit_deviation() is None
+
+
+def test_deviation_none_without_set_temp() -> None:
+    g = gateway(reading(110.0), fan(set_temp=None))
+    assert g.pit_deviation() is None
+
+
+def test_deviation_none_when_pit_reading_missing() -> None:
+    g = gateway(reading(None), fan())
+    assert g.pit_deviation() is None
+
+
+def test_deviation_none_without_pit_probe() -> None:
+    g = gateway(None, fan())
+    assert g.pit_deviation() is None

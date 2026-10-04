@@ -51,3 +51,48 @@ class Probe:
             return min(temps)
         else:
             return None
+
+
+@dataclass(frozen=True)
+class Fan:
+    """The fan is the object controlled by the gateway to manage pit temps"""
+
+    set_temp_celsius: float | None
+    state: int
+    connected: bool
+
+
+@dataclass(frozen=True)
+class Gateway:
+    """The gateway is the object the probes
+    connect to, and passes the data to the server via wifi"""
+
+    serial: str
+    label: str | None
+    battery_pct: int | None
+    wifi_dbm: int | None
+    last_seen: datetime
+    pit: Reading | None
+    fan: Fan | None
+
+    def get_pit_temp(self) -> float | None:
+        """Get the temp of the pit probes readings"""
+        if self.pit is not None:
+            return self.pit.celsius
+        else:
+            return None
+
+    def pit_deviation(self) -> float | None:
+        """How far the pit is from the Billows set temp, in °C.
+
+        Positive means the pit is too hot, negative too cold. Returns None when
+        it can't be known: no pit reading, no fan, fan disconnected, or no set temp.
+        """
+        pit_temp = self.get_pit_temp()
+        if pit_temp is None:
+            # the probe has no temp
+            return None
+        if self.fan is not None and self.fan.set_temp_celsius is not None and self.fan.connected:
+            return pit_temp - self.fan.set_temp_celsius
+        # fan is not connected or set up
+        return None
