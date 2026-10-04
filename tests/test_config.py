@@ -20,6 +20,14 @@ referer = "https://cloud.etiltd.com/"
 interval_seconds = 30
 """
 
+# An optional Traeger section, added onto VALID by the Traeger tests.
+TRAEGER = """
+[traeger_mqtt]
+email = "grill@example.com"
+password = "grill-pw"
+client_id = "test-client-id"
+"""
+
 
 def write_config(tmp_path: Path, text: str) -> Path:
     """Write `text` to a config.toml inside pytest's temporary folder."""
@@ -95,3 +103,40 @@ def test_bad_password_error_does_not_echo_value(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as exc:
         load_config(write_config(tmp_path, text))
     assert "12345" not in str(exc.value)
+
+
+# ----------------------------------------------------------------- Traeger ---
+
+
+def test_traeger_section_loads(tmp_path: Path) -> None:
+    """A complete [traeger_mqtt] section is read in."""
+    config = load_config(write_config(tmp_path, VALID + TRAEGER))
+    assert config.traeger_mqtt is not None
+    assert config.traeger_mqtt.email == "grill@example.com"
+    assert config.traeger_mqtt.password == "grill-pw"
+    assert config.traeger_mqtt.client_id == "test-client-id"
+
+
+def test_traeger_is_optional(tmp_path: Path) -> None:
+    """No [traeger_mqtt] section is fine: it just means no Traeger grill."""
+    config = load_config(write_config(tmp_path, VALID))
+    assert config.traeger_mqtt is None
+
+
+def test_half_filled_traeger_section_fails(tmp_path: Path) -> None:
+    """A half-filled section is a mistake, so fail loudly rather than ignore it."""
+    text = VALID + TRAEGER.replace('password = "grill-pw"\n', "")
+    with pytest.raises(ConfigError, match=r"\[traeger_mqtt\] password"):
+        load_config(write_config(tmp_path, text))
+
+
+def test_traeger_password_never_in_repr(tmp_path: Path) -> None:
+    """Printing or logging the config must not reveal the Traeger password either."""
+    config = load_config(write_config(tmp_path, VALID + TRAEGER))
+    assert "grill-pw" not in repr(config)
+
+
+def test_example_config_includes_traeger() -> None:
+    """Keeps the Traeger section in config.example.toml in sync with load_config."""
+    config = load_config(REPO_ROOT / "config.example.toml")
+    assert config.traeger_mqtt is not None

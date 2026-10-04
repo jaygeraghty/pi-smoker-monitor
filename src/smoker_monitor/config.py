@@ -32,6 +32,15 @@ class EtiCloudSettings:
 
 
 @dataclass(frozen=True)
+class TraegerSettings:
+    """Login and client setting for Traeger grills"""
+
+    email: str
+    password: str = field(repr=False)
+    client_id: str
+
+
+@dataclass(frozen=True)
 class PollingSettings:
     """How often to fetch new readings."""
 
@@ -44,6 +53,7 @@ class Config:
 
     eti_cloud: EtiCloudSettings
     polling: PollingSettings
+    traeger_mqtt: TraegerSettings | None = None
 
 
 def load_config(path: Path) -> Config:
@@ -69,12 +79,23 @@ def load_config(path: Path) -> Config:
         app_id=_get_str(data, "eti_cloud", "app_id"),
         referer=_get_str(data, "eti_cloud", "referer"),
     )
+    traeger_mqtt = None
+    if "traeger_mqtt" in data:
+        traeger_mqtt = TraegerSettings(
+            email=_get_str(data, "traeger_mqtt", "email"),
+            password=_get_str(data, "traeger_mqtt", "password"),
+            client_id=_get_str(data, "traeger_mqtt", "client_id"),
+        )
 
     interval = _get_int(data, "polling", "interval_seconds")
     if interval <= 0:
         raise ConfigError("[polling] interval_seconds must be greater than 0")
 
-    return Config(eti_cloud=eti_cloud, polling=PollingSettings(interval_seconds=interval))
+    return Config(
+        eti_cloud=eti_cloud,
+        traeger_mqtt=traeger_mqtt,
+        polling=PollingSettings(interval_seconds=interval),
+    )
 
 
 def _get(data: dict[str, Any], section: str, key: str) -> Any:
