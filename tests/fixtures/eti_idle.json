@@ -1,0 +1,721 @@
+{
+  "devices": [
+    {
+      "device_id": "GATEWAY-1",
+      "serial": "GATEWAY-1",
+      "label": "RFX GATEWAY",
+      "type": "rfx",
+      "firmware": "1.2.3-47",
+      "color": null,
+      "thumbnail": null,
+      "device_display_units": "F",
+      "iot_device_id": "GATEWAY-1-IOT",
+      "device_name": "rfx gateway",
+      "account_id": "ACCOUNT-ID",
+      "status": "NORMAL",
+      "battery_state": "discharging",
+      "big_query_info": {
+        "table_id": "GATEWAY-1-TABLE",
+        "dataset_id": "ACCOUNT-ID"
+      },
+      "fan": {
+        "connected": false,
+        "connection": false,
+        "fan_channel": "1",
+        "set_temp": 570,
+        "state": 0,
+        "additional_properties": null
+      },
+      "battery": 70,
+      "wifi_strength": -52,
+      "gateway_rssi": null,
+      "recording_interval_in_seconds": null,
+      "transmit_interval_in_seconds": 60,
+      "pending_load": false,
+      "battery_alert_sent": false,
+      "export_version": null,
+      "last_seen": "2026-09-21 11:23:07.637000+00:00",
+      "last_purged": "2025-09-14 15:55:54.189000+00:00",
+      "last_archive": "2026-09-21 11:22:21.263000+00:00",
+      "last_telemetry_saved": "2026-09-21 11:22:22.537000+00:00",
+      "last_wifi_connection": "2026-09-21 11:23:07.637000+00:00",
+      "last_bluetooth_connection": "2026-09-21 11:22:32.354000+00:00",
+      "session_start": "2026-09-21 11:22:20.359000+00:00",
+      "create_time": "2025-09-14 15:55:54.163391+00:00",
+      "update_time": "2026-09-21 11:23:07.948191+00:00",
+      "additional_properties": {
+        "assignedToAccountOn": "2025-09-14T16:02:20.277Z",
+        "iotCoreDeviceBlocked": false,
+        "notes": "",
+        "publicLink": "",
+        "public": false,
+        "sessionLabel": "",
+        "latestReading": "2026-09-21T11:22:22.537Z"
+      }
+    },
+    {
+      "device_id": null,
+      "serial": "PROBE-1",
+      "label": "RFX MEAT",
+      "type": "rfx",
+      "firmware": null,
+      "color": null,
+      "thumbnail": null,
+      "device_display_units": "F",
+      "iot_device_id": "PROBE-1",
+      "device_name": "rfx meat",
+      "account_id": "ACCOUNT-ID",
+      "status": "NORMAL",
+      "battery_state": "discharging",
+      "big_query_info": {
+        "table_id": "PROBE-1",
+        "dataset_id": "ACCOUNT-ID"
+      },
+      "fan": null,
+      "battery": 100,
+      "wifi_strength": null,
+      "gateway_rssi": -33,
+      "recording_interval_in_seconds": null,
+      "transmit_interval_in_seconds": 60,
+      "pending_load": false,
+      "battery_alert_sent": false,
+      "export_version": null,
+      "last_seen": "2026-09-21 11:23:35.340000+00:00",
+      "last_purged": "2025-09-14 16:08:45.051000+00:00",
+      "last_archive": "2026-09-21 11:22:18.404000+00:00",
+      "last_telemetry_saved": "2026-09-21 11:23:35.127000+00:00",
+      "last_wifi_connection": "2026-09-21 11:23:35.340000+00:00",
+      "last_bluetooth_connection": null,
+      "session_start": "2026-09-21 11:22:18.404000+00:00",
+      "create_time": "2025-09-14 16:08:45.026975+00:00",
+      "update_time": "2026-09-21 11:23:35.582911+00:00",
+      "additional_properties": {
+        "assignedToAccountOn": "2025-09-14T16:08:45.743Z",
+        "gatewayId": "GATEWAY-1-IOT",
+        "searModeEnabled": false,
+        "ringColors": {
+          "values": [
+            {
+              "stringValue": "white"
+            },
+            {
+              "stringValue": "none"
+            },
+            {
+              "stringValue": "none"
+            }
+          ]
+        },
+        "notes": "",
+        "publicLink": "",
+        "public": false,
+        "iotCoreDeviceBlocked": false,
+        "heartbeatInterval": "60",
+        "readInterval": "3",
+        "temperatureDeltaTrigger": 1.5,
+        "showSensorChannels": true,
+        "sessionLabel": "",
+        "latestReading": "2026-09-21T11:23:35.127Z",
+        "gatewayLastSeen": "2026-09-21T11:23:35.267Z",
+        "lastPacketId": "11"
+      }
+    },
+    {
+      "device_id": null,
+      "serial": "PROBE-2",
+      "label": "RFX MEAT",
+      "type": "rfx",
+      "firmware": null,
+      "color": null,
+      "thumbnail": null,
+      "device_display_units": "F",
+      "iot_device_id": "PROBE-2",
+      "device_name": "rfx meat",
+      "account_id": "ACCOUNT-ID",
+      "status": "NORMAL",
+      "battery_state": "discharging",
+      "big_query_info": {
+        "table_id": "PROBE-2",
+        "dataset_id": "ACCOUNT-ID"
+      },
+      "fan": null,
+      "battery": 10,
+      "wifi_strength": null,
+      "gateway_rssi": -51,
+      "recording_interval_in_seconds": null,
+      "transmit_interval_in_seconds": 60,
+      "pending_load": false,
+      "battery_alert_sent": true,
+      "export_version": null,
+      "last_seen": "2026-09-05 21:14:34.639000+00:00",
+      "last_purged": "2025-09-14 16:06:38.457000+00:00",
+      "last_archive": "2026-09-05 14:03:55.301000+00:00",
+      "last_telemetry_saved": "2026-09-05 21:14:34.446000+00:00",
+      "last_wifi_connection": "2026-09-05 21:14:34.639000+00:00",
+      "last_bluetooth_connection": null,
+      "session_start": "2026-09-04 15:24:16.945000+00:00",
+      "create_time": "2025-09-14 16:06:38.433103+00:00",
+      "update_time": "2026-09-05 21:14:34.898351+00:00",
+      "additional_properties": {
+        "gatewayId": "GATEWAY-1-IOT",
+        "assignedToAccountOn": "2025-09-14T16:06:45.642Z",
+        "searModeEnabled": false,
+        "ringColors": {
+          "values": [
+            {
+              "stringValue": "pink"
+            },
+            {
+              "stringValue": "none"
+            },
+            {
+              "stringValue": "none"
+            }
+          ]
+        },
+        "notes": "",
+        "publicLink": "",
+        "public": false,
+        "iotCoreDeviceBlocked": false,
+        "showSensorChannels": true,
+        "overTemperatureAcknowledged": false,
+        "overTemperatureCount": "6",
+        "heartbeatInterval": "60",
+        "readInterval": "3",
+        "temperatureDeltaTrigger": 1.5,
+        "sessionLabel": "brisket",
+        "latestReading": "2026-09-05T21:14:34.446Z",
+        "gatewayLastSeen": "2026-09-05T21:14:34.577Z",
+        "lastPacketId": "4"
+      }
+    }
+  ],
+  "channels": {
+    "GATEWAY-1": [
+      {
+        "last_telemetry_saved": "2026-09-21 11:22:22.537000+00:00",
+        "value": "154",
+        "units": "F",
+        "status": "NO PROBE",
+        "type": "Pro-Series",
+        "label": "internal probe",
+        "last_seen": "2026-09-21 11:23:07.637000+00:00",
+        "alarm_high": {
+          "enabled": true,
+          "alarming": false,
+          "value": 338,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": true,
+          "alarming": false,
+          "value": 86,
+          "units": "F"
+        },
+        "number": "1",
+        "minimum": {
+          "reading": {
+            "value": null,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:22:20.359000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": null,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:22:20.359000+00:00"
+        },
+        "show_avg_temp": true,
+        "additional_properties": {
+          "recentReadings": {
+            "values": [
+              {
+                "mapValue": {
+                  "fields": {
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:32.367Z"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:28.215Z"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:23.993Z"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:23.490Z"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:23.096Z"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:22.605Z"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:22.202Z"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:21.941Z"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:21.555Z"
+                    },
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "v": {
+                      "stringValue": "154.000"
+                    },
+                    "u": {
+                      "stringValue": "F"
+                    },
+                    "ts": {
+                      "timestampValue": "2026-09-21T11:22:21.207Z"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "showRateOfChange": false,
+          "rateOfChangeUnit": "Hour",
+          "estimatedAlarmStatus": "More than 24 Hours",
+          "enabled": true,
+          "color": "blue",
+          "rateOfChange": "0"
+        }
+      }
+    ],
+    "PROBE-1": [
+      {
+        "last_telemetry_saved": "2026-09-21 11:23:35.127000+00:00",
+        "value": 96.0999984741211,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-21 11:23:35.340000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "1",
+        "minimum": {
+          "reading": {
+            "value": 85.8000030517578,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:23:13.714000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": 149.6999969482422,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:22:43.064000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      },
+      {
+        "last_telemetry_saved": "2026-09-21 11:23:35.127000+00:00",
+        "value": 97.2999954223633,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-21 11:23:35.340000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "2",
+        "minimum": {
+          "reading": {
+            "value": 85.4000015258789,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:23:13.714000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": 147.39999389648438,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:22:43.064000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      },
+      {
+        "last_telemetry_saved": "2026-09-21 11:23:35.127000+00:00",
+        "value": 99.9000015258789,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-21 11:23:35.340000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "3",
+        "minimum": {
+          "reading": {
+            "value": 86.5,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:23:13.714000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": 134.1999969482422,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:22:43.064000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      },
+      {
+        "last_telemetry_saved": "2026-09-21 11:23:35.127000+00:00",
+        "value": 101.19999694824219,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-21 11:23:35.340000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "4",
+        "minimum": {
+          "reading": {
+            "value": 89.7000045776367,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:23:13.714000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": 109.4000015258789,
+            "units": "F"
+          },
+          "date_reading": "2026-09-21 11:23:22.883000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      }
+    ],
+    "PROBE-2": [
+      {
+        "last_telemetry_saved": "2026-09-05 21:14:34.446000+00:00",
+        "value": 76.4000015258789,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-05 21:14:34.639000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "1",
+        "minimum": {
+          "reading": {
+            "value": 64.5,
+            "units": "F"
+          },
+          "date_reading": "2026-09-04 15:24:50.749000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": null,
+            "units": "F"
+          },
+          "date_reading": "2026-09-05 07:20:24.078000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      },
+      {
+        "last_telemetry_saved": "2026-09-05 21:14:34.446000+00:00",
+        "value": 76.4000015258789,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-05 21:14:34.639000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "2",
+        "minimum": {
+          "reading": {
+            "value": 63.5999984741211,
+            "units": "F"
+          },
+          "date_reading": "2026-09-04 15:24:50.749000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": null,
+            "units": "F"
+          },
+          "date_reading": "2026-09-05 07:20:24.078000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      },
+      {
+        "last_telemetry_saved": "2026-09-05 21:14:34.446000+00:00",
+        "value": 76.3000030517578,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": "",
+        "last_seen": "2026-09-05 21:14:34.639000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "3",
+        "minimum": {
+          "reading": {
+            "value": 62.5999984741211,
+            "units": "F"
+          },
+          "date_reading": "2026-09-04 15:24:50.749000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": 204.6999969482422,
+            "units": "F"
+          },
+          "date_reading": "2026-09-05 06:57:31.800000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time",
+          "enabled": true
+        }
+      },
+      {
+        "last_telemetry_saved": "2026-09-05 21:14:34.446000+00:00",
+        "value": 75.8000030517578,
+        "units": "F",
+        "status": "NORMAL",
+        "type": "rfx meat sensor",
+        "label": null,
+        "last_seen": "2026-09-05 21:14:34.639000+00:00",
+        "alarm_high": {
+          "enabled": false,
+          "alarming": false,
+          "value": 165,
+          "units": "F"
+        },
+        "alarm_low": {
+          "enabled": false,
+          "alarming": false,
+          "value": 32,
+          "units": "F"
+        },
+        "number": "4",
+        "minimum": {
+          "reading": {
+            "value": 61.9000015258789,
+            "units": "F"
+          },
+          "date_reading": "2026-09-04 15:24:50.749000+00:00"
+        },
+        "maximum": {
+          "reading": {
+            "value": 205.3000030517578,
+            "units": "F"
+          },
+          "date_reading": "2026-09-05 07:24:22.726000+00:00"
+        },
+        "show_avg_temp": null,
+        "additional_properties": {
+          "estimatedAlarmStatus": "Alarm needs to be set to calculate estimated time"
+        }
+      }
+    ]
+  }
+}
