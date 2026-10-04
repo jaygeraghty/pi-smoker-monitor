@@ -1,11 +1,13 @@
-"""Tests for mapping raw ETI Cloud data to a Snapshot.
+"""Tests for the ETI Cloud source: mapping raw data, and the fetch wrapper.
 
 Most tests use tests/fixtures/eti_idle.json: a real, redacted capture taken
 with the kit switched off (air probe unplugged, Billows disconnected).
+No test here touches the network, except the one marked `live`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,10 +15,14 @@ from typing import Any
 
 import pytest
 
+from smoker_monitor.config import EtiCloudSettings, load_config
 from smoker_monitor.domain.models import Gateway, Snapshot
 from smoker_monitor.domain.units import f_to_c
+from smoker_monitor.sources import eti_cloud
+from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.eti_cloud import (
     LONG_AGO,
+    EtiCloudSource,
     parse_time,
     to_celsius,
     to_snapshot,
@@ -221,3 +227,50 @@ def test_parse_time_bad_values_give_none(value: Any) -> None:
 
 def test_parse_time_without_timezone_assumes_utc() -> None:
     assert parse_time("2026-09-21 11:22:22") == datetime(2026, 9, 21, 11, 22, 22, tzinfo=UTC)
+
+
+# ------------------------------------------------------ EtiCloudSource ---
+
+SETTINGS = EtiCloudSettings(
+    email="me@example.com",
+    password="s3cret-pw",
+    api_key="test-api-key",
+    app_id="test-app-id",
+    referer="https://cloud.etiltd.com/",
+)
+
+
+async def test_source_returns_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fetch() maps whatever fetch_raw downloads into a Snapshot."""
+
+    async def fake_fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
+        return load_raw()
+
+    monkeypatch.setattr(eti_cloud, "fetch_raw", fake_fetch_raw)
+    snapshot = await EtiCloudSource(SETTINGS).fetch()
+    assert snapshot.gateway is not None
+    assert len(snapshot.probes) == 2
+
+
+async def test_source_wraps_errors_without_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Any failure becomes a SourceError, and the password is never echoed."""
+
+    async def failing_fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
+        raise RuntimeError("login failed for password s3cret-pw")
+
+    monkeypatch.setattr(eti_cloud, "fetch_raw", failing_fetch_raw)
+    with pytest.raises(SourceError) as exc:
+        await EtiCloudSource(SETTINGS).fetch()
+    assert "login failed" in str(exc.value)
+    assert "s3cret-pw" not in str(exc.value)
+
+
+@pytest.mark.live
+def test_live_fetch_from_eti_cloud() -> None:
+    """Talks to the real ETI Cloud. Run with: SMOKER_LIVE_TESTS=1 uv run pytest"""
+    config_path = Path("config.toml")
+    if not config_path.exists():
+        pytest.skip("needs config.toml with your ETI Cloud login")
+    source = EtiCloudSource(load_config(config_path).eti_cloud)
+    snapshot = asyncio.run(source.fetch())
+    assert snapshot.gateway is not None

@@ -1,10 +1,34 @@
 """The `Source` interface every data source implements.
 
-Think of it as a C# interface: a `typing.Protocol` with something like
-`async def fetch(self) -> Snapshot`. Implementations:
-- `eti_cloud.EtiCloudSource` — real data via ETI Cloud (milestone 1).
-- A fake/replay source for tests and for running on a PC without a cook.
-- Later: a source for the DIY pit-controller Pi.
+A source is anything that can produce a Snapshot of the cook: ETI Cloud today,
+a fake source in tests, and later the DIY pit-controller Pi. The rest of the
+app only depends on this interface, never on a particular source.
+
+`Source` is a typing.Protocol, Python's equivalent of a C# interface: any class
+with a matching `fetch` method counts as a Source, without inheriting from it.
 """
 
-# TODO(milestone 1): define the Source protocol once the Snapshot model exists.
+from __future__ import annotations
+
+from typing import Protocol
+
+from smoker_monitor.domain.models import Snapshot
+
+
+class SourceError(Exception):
+    """Raised when a source can't produce a Snapshot (offline, bad login, ...).
+
+    The message is shown to the user, so it must be clear and must never
+    contain a password.
+    """
+
+
+class Source(Protocol):
+    """Something that can fetch the current state of the cook."""
+
+    async def fetch(self) -> Snapshot:
+        """Return a Snapshot of everything known right now.
+
+        Raises SourceError if the data can't be fetched.
+        """
+        ...
