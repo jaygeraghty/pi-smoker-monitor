@@ -83,9 +83,11 @@ class Gateway:
             return None
 
     def pit_deviation(self) -> float | None:
-        """work out how far from the set temp the pit currently is. 
-        Returns Nome if nothing can be done about fixing the temp. 
-        A positive number means the pit is too hot, negative too cold"""
+        """How far the pit is from the Billows set temp, in °C.
+
+        Positive means the pit is too hot, negative too cold. Returns None when
+        it can't be known: no pit reading, no fan, fan disconnected, or no set temp.
+        """
         pit_temp = self.get_pit_temp()
         if pit_temp is None:
             # the probe has no temp
