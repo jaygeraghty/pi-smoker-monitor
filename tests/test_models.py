@@ -149,35 +149,36 @@ def test_deviation_none_without_pit_probe() -> None:
     assert g.pit_deviation() is None
 
 
-def snapshot() -> Snapshot:
-    p = probe(Reading(78, taken_at=TEN_AM), Reading(55, taken_at=TEN_AM))
-    g = gateway(reading(110.0), fan())
-    return Snapshot(taken_at=TEN_AM, gateway=g, probes=[p])
+def snapshot(g: Gateway | None) -> Snapshot:
+    p = probe(reading(45), reading(65))
+    return Snapshot(taken_at=TEN_AM, gateway=g, probes=(p,))
 
 
-def snapshot_no_gateway() -> Snapshot:
-    p = probe(Reading(78, taken_at=TEN_AM), Reading(55, taken_at=TEN_AM))
-    g = None
-    return Snapshot(taken_at=TEN_AM, gateway=g, probes=[p])
-
-
-def test_snapshot_has_objects_attached():
-    s = snapshot()
+def test_snapshot_has_objects_attached() -> None:
+    g = gateway(reading(110), fan())
+    s = snapshot(g)
     assert s.taken_at == TEN_AM
     assert s.gateway is not None
     assert s.probes is not None
 
 
-def test_snapshot_can_have_missing_gateway():
-    s = snapshot_no_gateway()
+def test_snapshot_can_have_missing_gateway() -> None:
+    s = snapshot(None)
     assert s.gateway is None
 
 
-def test_missing_gateway_is_stale():
-    s = snapshot_no_gateway()
-    assert s.is_stale(TEN_FIFTEEN, timedelta(20))
+def test_missing_gateway_is_stale() -> None:
+    s = snapshot(None)
+    assert s.is_stale(TEN_FIFTEEN, timedelta(minutes=20))
 
 
-def test_snapshot_is_stale():
-    s = snapshot()
-    assert not s.is_stale(TEN_FIFTEEN, timedelta(10))
+def test_snapshot_is_not_stale() -> None:
+    g = gateway(reading(110), fan())
+    s = snapshot(g)
+    assert not s.is_stale(TEN_FIFTEEN, timedelta(minutes=30))
+
+
+def test_snapshot_is_stale() -> None:
+    g = gateway(reading(110), fan())
+    s = snapshot(g)
+    assert s.is_stale(TEN_FIFTEEN, timedelta(minutes=10))
