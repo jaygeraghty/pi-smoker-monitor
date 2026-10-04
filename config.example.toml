@@ -11,12 +11,11 @@ app_id = "1:701566661301:web:7a9bc711c05985ead144fc"
 referer = "https://cloud.etiltd.com/"
 
 [traeger_mqtt]
-#Only required if you wish to connect a traeger grill to the app. can be removed if not needed 
+# Only required if you wish to connect a traeger grill to the app. can be removed if not needed
 email = "you@example.com"
 password = "change-me"
+# Traegers public login ID. change it if Traeger change it
 client_id = "4id473dsrcq4kevlgrikukqn2a"
-
-
 
 [polling]
 interval_seconds = 30

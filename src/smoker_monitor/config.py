@@ -33,7 +33,7 @@ class EtiCloudSettings:
 
 @dataclass(frozen=True)
 class TraegerSettings:
-    """Login and client setting for Traeger grills"""
+    """Login and client settings for Traeger grills."""
 
     email: str
     password: str = field(repr=False)
