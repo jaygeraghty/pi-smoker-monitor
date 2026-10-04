@@ -5,9 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading
+from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading, Snapshot
 
 TEN_AM = datetime(2026, 10, 3, 10, 0, tzinfo=UTC)
+TEN_FIFTEEN = datetime(2026, 10, 3, 10, 15, tzinfo=UTC)
 
 
 def test_age_is_time_since_reading() -> None:
@@ -146,3 +147,37 @@ def test_deviation_none_when_pit_reading_missing() -> None:
 def test_deviation_none_without_pit_probe() -> None:
     g = gateway(None, fan())
     assert g.pit_deviation() is None
+
+
+def snapshot() -> Snapshot:
+    p = probe(Reading(78, taken_at=TEN_AM), Reading(55, taken_at=TEN_AM))
+    g = gateway(reading(110.0), fan())
+    return Snapshot(taken_at=TEN_AM, gateway=g, probes=[p])
+
+
+def snapshot_no_gateway() -> Snapshot:
+    p = probe(Reading(78, taken_at=TEN_AM), Reading(55, taken_at=TEN_AM))
+    g = None
+    return Snapshot(taken_at=TEN_AM, gateway=g, probes=[p])
+
+
+def test_snapshot_has_objects_attached():
+    s = snapshot()
+    assert s.taken_at == TEN_AM
+    assert s.gateway is not None
+    assert s.probes is not None
+
+
+def test_snapshot_can_have_missing_gateway():
+    s = snapshot_no_gateway()
+    assert s.gateway is None
+
+
+def test_missing_gateway_is_stale():
+    s = snapshot_no_gateway()
+    assert s.is_stale(TEN_FIFTEEN, timedelta(20))
+
+
+def test_snapshot_is_stale():
+    s = snapshot()
+    assert not s.is_stale(TEN_FIFTEEN, timedelta(10))
