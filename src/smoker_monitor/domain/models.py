@@ -96,3 +96,20 @@ class Gateway:
             return pit_temp - self.fan.set_temp_celsius
         # fan is not connected or set up
         return None
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """Everything known about the cook at one poll."""
+
+    taken_at: datetime
+    gateway: Gateway | None
+    probes: tuple[Probe, ...]
+
+    def is_stale(self, now: datetime, max_age: timedelta) -> bool:
+        """Takes a timedelta value which is checked against the last gateway report
+        Returns true if the last snapshot is stale, false if not
+        A missing gateway will be treated as stale"""
+        if self.gateway is None:
+            return True
+        return self.gateway.last_seen + max_age < now
