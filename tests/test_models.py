@@ -5,7 +5,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading, Snapshot
+from smoker_monitor.domain.models import (
+    NO_ALARMS,
+    AlarmLimit,
+    AlarmSettings,
+    Fan,
+    Gateway,
+    Probe,
+    Reading,
+    Snapshot,
+)
 
 TEN_AM = datetime(2026, 10, 3, 10, 0, tzinfo=UTC)
 TEN_FIFTEEN = datetime(2026, 10, 3, 10, 15, tzinfo=UTC)
@@ -190,3 +199,38 @@ def test_snapshot_not_stale_at_exact_limit() -> None:
     """Boundary: exactly max_age old is not yet stale."""
     s = snapshot(gateway(reading(110.0), fan()))
     assert not s.is_stale(TEN_FIFTEEN, timedelta(minutes=15))
+
+
+# ------------------------------------------------------------------ alarms ---
+
+
+def test_alarm_limit_not_alarming_by_default() -> None:
+    """Limits set on the Pi never claim to be going off; only ETI sets that."""
+    limit = AlarmLimit(enabled=True, celsius=95.0)
+    assert limit.alarming is False
+
+
+def test_alarm_limit_cannot_be_changed() -> None:
+    limit = AlarmLimit(enabled=True, celsius=95.0)
+    with pytest.raises(FrozenInstanceError):
+        limit.celsius = 100.0  # type: ignore[misc]
+
+
+def test_no_alarms_has_no_limits() -> None:
+    assert NO_ALARMS.high is None
+    assert NO_ALARMS.low is None
+
+
+def test_alarm_settings_with_same_values_are_equal() -> None:
+    first = AlarmSettings(high=AlarmLimit(enabled=True, celsius=95.0), low=None)
+    second = AlarmSettings(high=AlarmLimit(enabled=True, celsius=95.0), low=None)
+    assert first == second
+
+
+def test_probe_alarms_default_to_none() -> None:
+    """Probes built without alarm settings (as in older code) get NO_ALARMS."""
+    assert probe(reading(70.0)).alarms == NO_ALARMS
+
+
+def test_gateway_pit_alarms_default_to_none() -> None:
+    assert gateway(reading(110.0), fan()).pit_alarms == NO_ALARMS

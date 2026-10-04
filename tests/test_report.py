@@ -8,8 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from smoker_monitor.domain.models import Fan, Gateway, Reading, Snapshot
-from smoker_monitor.report import format_age, format_snapshot, format_temp
+from smoker_monitor.domain.models import (
+    NO_ALARMS,
+    AlarmLimit,
+    AlarmSettings,
+    Fan,
+    Gateway,
+    Reading,
+    Snapshot,
+)
+from smoker_monitor.report import format_age, format_alarms, format_snapshot, format_temp
 from smoker_monitor.sources.eti_cloud import to_snapshot
 
 FIXTURE = Path(__file__).parent / "fixtures" / "eti_idle.json"
@@ -78,6 +86,37 @@ def test_missing_gateway_is_explained() -> None:
     report = format_snapshot(snapshot, NOW)
     assert "No RFX Gateway found" in report
     assert "WARNING" in report
+
+
+def test_idle_report_shows_pit_alarms() -> None:
+    """Shown even though the air probe is unplugged: you still want to see what's set."""
+    assert "Alarm: high 170.0°C, low 30.0°C" in idle_report()
+
+
+def test_idle_report_shows_probe_alarms_off() -> None:
+    assert "Alarms:  off" in idle_report()
+
+
+def test_format_alarms_none_set() -> None:
+    assert format_alarms(NO_ALARMS) == "off"
+
+
+def test_format_alarms_hides_switched_off_limits() -> None:
+    alarms = AlarmSettings(
+        high=AlarmLimit(enabled=False, celsius=74.0),
+        low=AlarmLimit(enabled=True, celsius=30.0),
+    )
+    assert format_alarms(alarms) == "low 30.0°C"
+
+
+def test_format_alarms_marks_alarming() -> None:
+    alarms = AlarmSettings(high=AlarmLimit(enabled=True, celsius=95.0, alarming=True), low=None)
+    assert format_alarms(alarms) == "high 95.0°C ALARMING"
+
+
+def test_format_alarms_unreadable_limit_still_shown() -> None:
+    alarms = AlarmSettings(high=AlarmLimit(enabled=True, celsius=None), low=None)
+    assert format_alarms(alarms) == "high --"
 
 
 @pytest.mark.parametrize(

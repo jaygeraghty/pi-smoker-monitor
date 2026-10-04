@@ -34,7 +34,16 @@ from aiohttp import ClientSession
 from thermoworks_cloud import AuthFactory, ResourceNotFoundError, ThermoworksCloud
 
 from smoker_monitor.config import EtiCloudSettings
-from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading, Snapshot
+from smoker_monitor.domain.models import (
+    NO_ALARMS,
+    AlarmLimit,
+    AlarmSettings,
+    Fan,
+    Gateway,
+    Probe,
+    Reading,
+    Snapshot,
+)
 from smoker_monitor.domain.units import f_to_c
 from smoker_monitor.sources.base import SourceError
 
@@ -156,6 +165,8 @@ def to_gateway(device: dict[str, Any], channels: list[dict[str, Any]]) -> Gatewa
     sorted_channels = sort_channels(channels)
     # Channel 1 is the pit probe. No channels at all means no pit probe.
     pit = to_reading(sorted_channels[0], last_seen) if sorted_channels else None
+    # The pit's alarms are set on channel 1 too.
+    pit_alarms = to_alarm_settings(sorted_channels[0]) if sorted_channels else NO_ALARMS
 
     return Gateway(
         serial=str(device.get("serial")),
@@ -165,13 +176,18 @@ def to_gateway(device: dict[str, Any], channels: list[dict[str, Any]]) -> Gatewa
         last_seen=last_seen,
         pit=pit,
         fan=to_fan(device.get("fan")),
+        pit_alarms=pit_alarms,
     )
 
 
 def to_probe(device: dict[str, Any], channels: list[dict[str, Any]]) -> Probe:
     """Map a raw meat-probe device and its channels to a Probe."""
     last_seen = parse_time(device.get("last_seen")) or LONG_AGO
-    sensors = tuple(to_reading(channel, last_seen) for channel in sort_channels(channels))
+    sorted_channels = sort_channels(channels)
+    sensors = tuple(to_reading(channel, last_seen) for channel in sorted_channels)
+    # Alarms are set per probe in the ETI app, and every sensor carries the
+    # same settings, so channel 1's settings stand for the whole probe.
+    alarms = to_alarm_settings(sorted_channels[0]) if sorted_channels else NO_ALARMS
 
     return Probe(
         serial=str(device.get("serial")),
@@ -179,6 +195,7 @@ def to_probe(device: dict[str, Any], channels: list[dict[str, Any]]) -> Probe:
         battery_pct=to_int(device.get("battery")),
         last_seen=last_seen,
         sensors=sensors,
+        alarms=alarms,
     )
 
 
@@ -193,6 +210,30 @@ def to_fan(fan: dict[str, Any] | None) -> Fan | None:
         # An unknown state is treated as 0 (off).
         state=state if state is not None else 0,
         connected=fan.get("connected") is True,
+    )
+
+
+def to_alarm_settings(channel: dict[str, Any]) -> AlarmSettings:
+    """Map the high and low alarms on one raw channel to AlarmSettings."""
+    return AlarmSettings(
+        high=to_alarm_limit(channel.get("alarm_high")),
+        low=to_alarm_limit(channel.get("alarm_low")),
+    )
+
+
+def to_alarm_limit(raw: Any) -> AlarmLimit | None:
+    """Map one raw alarm (ETI's alarm_high or alarm_low) to an AlarmLimit.
+
+    Returns None if there's no alarm data at all. An alarm that is switched on
+    but has an unreadable value keeps enabled=True with celsius=None, so the
+    alarm rules can still warn about it rather than quietly ignoring it.
+    """
+    if not isinstance(raw, dict):
+        return None
+    return AlarmLimit(
+        enabled=raw.get("enabled") is True,
+        celsius=to_celsius(raw.get("value"), raw.get("units")),
+        alarming=raw.get("alarming") is True,
     )
 
 

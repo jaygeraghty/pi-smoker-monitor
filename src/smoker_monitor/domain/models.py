@@ -1,21 +1,46 @@
-"""Domain models describing one moment of a cook.
+"""Domain models: everything we know about a cook at one moment.
 
-Suggested shape (frozen dataclasses, all temperatures stored in one unit):
-- Reading:   a temperature value + when it was taken (timezone-aware UTC).
-- Probe:     one RFX MEAT probe — id, label, battery %, its sensor readings,
-             and the "core" reading (lowest sensor) used for doneness.
-- Pit:       the pit/air probe reading.
-- Fan:       Billows state — connected, set temperature, output/state.
-- Snapshot:  everything above at one poll, plus `source_last_seen`.
+These are plain, frozen (read-only) dataclasses with no network or hardware
+code, so they are easy to test.
 
-Design notes:
-- Pick ONE internal unit (°C or °F) and convert only at the edges.
-- Store `last_seen` on each item so staleness can be judged per device.
-- Missing data should be explicit (None / Optional), never a fake 0.
+- AlarmLimit:    one high or low alarm limit on a channel.
+- AlarmSettings: a channel's high and low alarm limits together.
+- Reading:       one temperature and when it was taken.
+- Probe:         an RFX MEAT probe: its sensors, battery and alarm settings.
+- Fan:           the Billows fan: connected or not, and its set temperature.
+- Gateway:       the RFX Gateway: pit (air) probe, fan, Wi-Fi and alarm settings.
+- Snapshot:      the Gateway and every probe, as seen at one poll.
+
+Rules followed throughout:
+- Temperatures are always °C. Sources convert from °F before building these.
+- Missing data is None, never a fake 0.
+- Every device has `last_seen`, so we can tell when its data has gone stale.
 """
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+
+
+@dataclass(frozen=True)
+class AlarmLimit:
+    """The parameter which describes what a high or low alarm must be above or below
+
+    a None celsius meanings nothing received"""
+
+    enabled: bool
+    celsius: float | None
+    alarming: bool = False
+
+
+@dataclass(frozen=True)
+class AlarmSettings:
+    """The parameter which holds probe or gateway alarm settings. None is no alarm set"""
+
+    high: AlarmLimit | None
+    low: AlarmLimit | None
+
+
+NO_ALARMS = AlarmSettings(high=None, low=None)
 
 
 @dataclass(frozen=True)
@@ -39,6 +64,7 @@ class Probe:
     battery_pct: int | None
     last_seen: datetime
     sensors: tuple[Reading, ...]
+    alarms: AlarmSettings = NO_ALARMS
 
     def core_celsius(self) -> float | None:
         """Lowest sensor temperature (the coldest point in the meat), or None if no readings."""
@@ -74,6 +100,7 @@ class Gateway:
     last_seen: datetime
     pit: Reading | None
     fan: Fan | None
+    pit_alarms: AlarmSettings = NO_ALARMS
 
     def get_pit_temp(self) -> float | None:
         """Get the temp of the pit probes readings"""
