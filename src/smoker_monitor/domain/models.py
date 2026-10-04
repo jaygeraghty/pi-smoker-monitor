@@ -92,7 +92,7 @@ class Gateway:
         if pit_temp is None:
             # the probe has no temp
             return None
-        if self.fan and self.fan.set_temp_celsius is not None and self.fan.connected:
+        if self.fan is not None and self.fan.set_temp_celsius is not None and self.fan.connected:
             return pit_temp - self.fan.set_temp_celsius
         # fan is not connected or set up
         return None
