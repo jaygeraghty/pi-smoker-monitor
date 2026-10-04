@@ -150,6 +150,7 @@ def test_deviation_none_without_pit_probe() -> None:
 
 
 def snapshot(g: Gateway | None) -> Snapshot:
+    """Shorthand for a snapshot with or without a valid gateway. Always valid readings"""
     p = probe(reading(45), reading(65))
     return Snapshot(taken_at=TEN_AM, gateway=g, probes=(p,))
 
@@ -159,7 +160,7 @@ def test_snapshot_has_objects_attached() -> None:
     s = snapshot(g)
     assert s.taken_at == TEN_AM
     assert s.gateway is not None
-    assert s.probes is not None
+    assert len(s.probes) == 1
 
 
 def test_snapshot_can_have_missing_gateway() -> None:
@@ -168,6 +169,7 @@ def test_snapshot_can_have_missing_gateway() -> None:
 
 
 def test_missing_gateway_is_stale() -> None:
+    """This is the 'fail safe'. no gateway = any data is stale"""
     s = snapshot(None)
     assert s.is_stale(TEN_FIFTEEN, timedelta(minutes=20))
 
