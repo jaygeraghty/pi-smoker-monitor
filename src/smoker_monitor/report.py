@@ -47,7 +47,7 @@ def format_gateway(gateway: Gateway, now: datetime) -> list[str]:
         lines.append("  Pit:   no reading (is the air probe plugged in?)")
     else:
         lines.append(f"  Pit:   {format_temp(gateway.pit.celsius)}")
-    lines.append(f"  Alarm: {format_alarms(gateway.pit_alarms)}")  # NEW
+    lines.append(f"  Alarm: {format_alarms(gateway.pit_alarms)}")
 
     fan = gateway.fan
 
