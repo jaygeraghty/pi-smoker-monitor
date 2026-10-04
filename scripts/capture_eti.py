@@ -1,8 +1,9 @@
 """Save a copy of your ETI Cloud data, plus a redacted copy for tests.
 
 This is a developer tool, not part of the app. It logs in to ETI Cloud using
-the details in config.toml, downloads every device on your account (the RFX
-Gateway and each RFX MEAT probe) along with their channels, and writes:
+the details in config.toml and the app's own download code (fetch_raw),
+fetches every device on your account (the RFX Gateway and each RFX MEAT probe)
+along with their channels, and writes:
 
     captures/eti_raw.json        your real data (git-ignored, never committed)
     tests/fixtures/eti_idle.json the same data with anything that identifies
@@ -19,75 +20,18 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from aiohttp import ClientSession
-from thermoworks_cloud import AuthFactory, ResourceNotFoundError, ThermoworksCloud
-
 from smoker_monitor.config import load_config
+from smoker_monitor.sources.eti_cloud import fetch_raw
 
 CONFIG_FILE = Path("config.toml")
 RAW_FILE = Path("captures/eti_raw.json")
 FIXTURE_FILE = Path("tests/fixtures/eti_idle.json")
 
-# ETI numbers channels from 1. A probe has 4 sensors and the Gateway has 1,
-# so we stop at the first missing channel; this is just a safety limit.
-MAX_CHANNELS = 10
-
 # Matches anything that looks like an email address.
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-
-
-# --------------------------------------------------------------- fetching ---
-
-
-async def fetch_raw(config_path: Path) -> dict[str, Any]:
-    """Log in to ETI Cloud and return every device and its channels.
-
-    The result looks like:
-        {
-            "devices": [ {...device details...}, ... ],
-            "channels": { "<device serial>": [ {...channel 1...}, ... ] },
-        }
-    """
-    config = load_config(config_path)
-    eti = config.eti_cloud
-
-    async with ClientSession() as session:
-        # Log in. The api_key, app_id and referer point the library at ETI Cloud
-        # rather than its default (ThermoWorks Cloud).
-        auth = await AuthFactory(
-            session, api_key=eti.api_key, app_id=eti.app_id, referer=eti.referer
-        ).build_auth(eti.email, eti.password)
-        cloud = ThermoworksCloud(auth)
-
-        user = await cloud.get_user()
-        devices = await cloud.get_devices(user.account_id)
-
-        channels: dict[str, list[dict[str, Any]]] = {}
-        for device in devices:
-            if device.serial:
-                channels[device.serial] = await fetch_channels(cloud, device.serial)
-
-    raw = {"devices": [asdict(device) for device in devices], "channels": channels}
-    # Round-trip through JSON so datetimes become plain text, exactly as they
-    # will appear in the saved files.
-    result: dict[str, Any] = json.loads(json.dumps(raw, default=str))
-    return result
-
-
-async def fetch_channels(cloud: ThermoworksCloud, serial: str) -> list[dict[str, Any]]:
-    """Return all channels for one device, stopping at the first one that doesn't exist."""
-    found = []
-    for number in range(1, MAX_CHANNELS + 1):
-        try:
-            channel = await cloud.get_device_channel(device_serial=serial, channel=str(number))
-        except ResourceNotFoundError:
-            break
-        found.append(asdict(channel))
-    return found
 
 
 # -------------------------------------------------------------- redacting ---
@@ -168,7 +112,10 @@ def save_json(data: dict[str, Any], path: Path) -> None:
 
 
 async def main() -> None:
-    raw = await fetch_raw(CONFIG_FILE)
+    # Uses the app's own download code, so the capture always matches what the
+    # app sees.
+    config = load_config(CONFIG_FILE)
+    raw = await fetch_raw(config.eti_cloud)
     save_json(raw, RAW_FILE)
 
     fakes = find_sensitive_values(raw)

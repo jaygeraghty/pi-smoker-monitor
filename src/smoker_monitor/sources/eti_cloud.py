@@ -1,13 +1,13 @@
-"""ETI Cloud adapter: turns raw ETI Cloud data into a domain Snapshot.
+"""ETI Cloud adapter: fetches raw ETI Cloud data and turns it into a Snapshot.
 
 This module has two halves:
-- Mapping (this file, for now): pure functions that convert the raw device and
-  channel data into our domain models. No network, so it is fully testable
-  against tests/fixtures/eti_idle.json.
-- Fetching (next step): logging in and downloading the raw data with the
-  `thermoworks-cloud` library, as scripts/capture_eti.py already does.
+- Fetching: `EtiCloudSource` logs in with the `thermoworks-cloud` library and
+  downloads every device and its channels (`fetch_raw`).
+- Mapping: pure functions (`to_snapshot` and friends) that convert that raw data
+  into our domain models. No network, so they are fully testable against
+  tests/fixtures/eti_idle.json.
 
-The raw data has this shape (see scripts/capture_eti.py):
+The raw data has this shape:
     {
         "devices": [ {...device details...}, ... ],
         "channels": { "<device serial>": [ {...channel 1...}, ... ] },
@@ -25,11 +25,18 @@ What the raw data looks like in practice (from a real capture):
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 
+from aiohttp import ClientSession
+from thermoworks_cloud import AuthFactory, ResourceNotFoundError, ThermoworksCloud
+
+from smoker_monitor.config import EtiCloudSettings
 from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading, Snapshot
 from smoker_monitor.domain.units import f_to_c
+from smoker_monitor.sources.base import SourceError
 
 GATEWAY_NAME = "rfx gateway"
 PROBE_NAME = "rfx meat"
@@ -40,6 +47,88 @@ NO_READING_STATUSES = {"NO PROBE"}
 # Used when a time is missing. Being decades old, anything stamped with it
 # counts as stale, so missing data errs towards raising the alarm.
 LONG_AGO = datetime(1970, 1, 1, tzinfo=UTC)
+
+# ETI numbers channels from 1. A probe has 4 sensors and the Gateway has 1,
+# so we stop at the first missing channel; this is just a safety limit.
+MAX_CHANNELS = 10
+
+
+# ----------------------------------------------------------------- fetching ---
+
+
+class EtiCloudSource:
+    """A Source that reads your RFX Gateway, Billows and RFX probes from ETI Cloud."""
+
+    def __init__(self, settings: EtiCloudSettings) -> None:
+        self._settings = settings
+
+    async def fetch(self) -> Snapshot:
+        """Download the latest data and return it as a Snapshot.
+
+        Raises SourceError, with a message safe to show the user, if anything
+        goes wrong (no internet, wrong password, ETI Cloud down, ...).
+        """
+        try:
+            raw = await fetch_raw(self._settings)
+        except SourceError:
+            raise
+        except Exception as e:
+            # Belt and braces: make sure the password can never leak into
+            # the message, even if a library includes it in an error.
+            detail = str(e).replace(self._settings.password, "***")
+            raise SourceError(
+                f"Couldn't fetch from ETI Cloud ({type(e).__name__}: {detail})"
+            ) from e
+        return to_snapshot(raw, datetime.now(UTC))
+
+
+async def fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
+    """Log in to ETI Cloud and return every device and its channels as plain data.
+
+    Each call opens a fresh connection and logs in again. That's fine for a
+    one-off snapshot; the long-running service will keep a session open instead.
+    """
+    async with ClientSession() as session:
+        # The api_key, app_id and referer point the library at ETI Cloud
+        # rather than its default (ThermoWorks Cloud).
+        auth = await AuthFactory(
+            session,
+            api_key=settings.api_key,
+            app_id=settings.app_id,
+            referer=settings.referer,
+        ).build_auth(settings.email, settings.password)
+        cloud = ThermoworksCloud(auth)
+
+        user = await cloud.get_user()
+        if not user.account_id:
+            raise SourceError("ETI Cloud returned no account for this login")
+        devices = await cloud.get_devices(user.account_id)
+
+        channels: dict[str, list[dict[str, Any]]] = {}
+        for device in devices:
+            if device.serial:
+                channels[device.serial] = await fetch_channels(cloud, device.serial)
+
+    raw = {"devices": [asdict(device) for device in devices], "channels": channels}
+    # Round-trip through JSON so datetimes become plain text, exactly like the
+    # saved fixtures. The mapping functions below then only deal with one format.
+    result: dict[str, Any] = json.loads(json.dumps(raw, default=str))
+    return result
+
+
+async def fetch_channels(cloud: ThermoworksCloud, serial: str) -> list[dict[str, Any]]:
+    """Return all channels for one device, stopping at the first one that doesn't exist."""
+    found = []
+    for number in range(1, MAX_CHANNELS + 1):
+        try:
+            channel = await cloud.get_device_channel(device_serial=serial, channel=str(number))
+        except ResourceNotFoundError:
+            break
+        found.append(asdict(channel))
+    return found
+
+
+# ------------------------------------------------------------------ mapping ---
 
 
 def to_snapshot(raw: dict[str, Any], now: datetime) -> Snapshot:
