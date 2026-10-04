@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from smoker_monitor.domain.models import Gateway, Probe, Snapshot
+from smoker_monitor.domain.models import AlarmSettings, Gateway, Probe, Snapshot
 
 # How old the Gateway's last report can be before we warn that data is stale.
 STALE_AFTER = timedelta(minutes=5)
@@ -47,8 +47,10 @@ def format_gateway(gateway: Gateway, now: datetime) -> list[str]:
         lines.append("  Pit:   no reading (is the air probe plugged in?)")
     else:
         lines.append(f"  Pit:   {format_temp(gateway.pit.celsius)}")
+    lines.append(f"  Alarm: {format_alarms(gateway.pit_alarms)}")  # NEW
 
     fan = gateway.fan
+
     if fan is None:
         lines.append("  Fan:   none")
     elif not fan.connected:
@@ -71,6 +73,7 @@ def format_probe(probe: Probe, now: datetime) -> list[str]:
         f"last seen {format_age(now - probe.last_seen)}",
         f"  Core:    {format_temp(probe.core_celsius())}",
         f"  Sensors: {sensors}",
+        f"  Alarms:  {format_alarms(probe.alarms)}",
     ]
 
 
@@ -80,6 +83,23 @@ def format_probe(probe: Probe, now: datetime) -> list[str]:
 def format_temp(celsius: float | None) -> str:
     """e.g. 107.2°C, or -- when unknown."""
     return "--" if celsius is None else f"{celsius:.1f}°C"
+
+
+def format_alarms(alarms: AlarmSettings) -> str:
+    """e.g. 'high 170.0°C, low 30.0°C', or 'off' when none are switched on.
+
+    Only alarms switched on in the ETI app are shown. One that is going off
+    right now is marked ALARMING.
+    """
+    parts = []
+    for name, limit in (("high", alarms.high), ("low", alarms.low)):
+        if limit is None or not limit.enabled:
+            continue
+        text = f"{name} {format_temp(limit.celsius)}"
+        if limit.alarming:
+            text += " ALARMING"
+        parts.append(text)
+    return ", ".join(parts) or "off"
 
 
 def format_percent(value: int | None) -> str:

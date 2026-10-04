@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from smoker_monitor.config import EtiCloudSettings, load_config
-from smoker_monitor.domain.models import Gateway, Snapshot
+from smoker_monitor.domain.models import NO_ALARMS, Gateway, Snapshot
 from smoker_monitor.domain.units import f_to_c
 from smoker_monitor.sources import eti_cloud
 from smoker_monitor.sources.base import SourceError
@@ -24,6 +24,7 @@ from smoker_monitor.sources.eti_cloud import (
     LONG_AGO,
     EtiCloudSource,
     parse_time,
+    to_alarm_limit,
     to_celsius,
     to_snapshot,
 )
@@ -113,6 +114,30 @@ def test_old_capture_is_stale() -> None:
     assert idle_snapshot().is_stale(NOW, timedelta(minutes=5))
 
 
+def test_pit_alarms_come_from_eti() -> None:
+    """Real data: the pit had both alarms switched on in the app (338°F / 86°F)."""
+    alarms = idle_gateway().pit_alarms
+    assert alarms.high is not None
+    assert alarms.high.enabled is True
+    assert alarms.high.celsius == pytest.approx(170.0)
+    assert alarms.high.alarming is False
+    assert alarms.low is not None
+    assert alarms.low.enabled is True
+    assert alarms.low.celsius == pytest.approx(30.0)
+    assert alarms.low.alarming is False
+
+
+def test_probe_alarms_come_from_eti() -> None:
+    """Real data: the probe alarms existed (165°F / 32°F) but were switched off."""
+    alarms = idle_snapshot().probes[0].alarms
+    assert alarms.high is not None
+    assert alarms.high.enabled is False
+    assert alarms.high.celsius == pytest.approx(f_to_c(165))
+    assert alarms.low is not None
+    assert alarms.low.enabled is False
+    assert alarms.low.celsius == pytest.approx(0.0)
+
+
 # ----------------------------------------------------- awkward data ---
 
 
@@ -194,6 +219,51 @@ def test_unknown_device_types_are_ignored() -> None:
     assert snapshot.probes == ()
 
 
+def alarm(value: Any, enabled: Any = True, alarming: Any = False) -> dict[str, Any]:
+    """A minimal raw alarm block, as found in a channel's alarm_high or alarm_low."""
+    return {"enabled": enabled, "alarming": alarming, "value": value, "units": "F"}
+
+
+def probe_with_channels(*channels: dict[str, Any]) -> dict[str, Any]:
+    """Raw data holding one probe (P1) with the given channels."""
+    probe = {"serial": "P1", "device_name": "rfx meat", "last_seen": "2026-10-04 11:59:00+00:00"}
+    return {"devices": [probe], "channels": {"P1": list(channels)}}
+
+
+def test_alarming_flag_is_read() -> None:
+    raw = probe_with_channels({**channel("1", 230), "alarm_high": alarm(225, alarming=True)})
+    high = to_snapshot(raw, NOW).probes[0].alarms.high
+    assert high is not None
+    assert high.alarming is True
+
+
+def test_probe_alarms_come_from_channel_one() -> None:
+    """Channels arrive in any order; the probe's alarms are always channel 1's."""
+    raw = probe_with_channels(
+        {**channel("2", 100), "alarm_high": alarm(250)},
+        {**channel("1", 100), "alarm_high": alarm(200)},
+    )
+    high = to_snapshot(raw, NOW).probes[0].alarms.high
+    assert high is not None
+    assert high.celsius == pytest.approx(f_to_c(200))
+
+
+def test_channel_without_alarms_gives_none() -> None:
+    raw = probe_with_channels(channel("1", 100))
+    assert to_snapshot(raw, NOW).probes[0].alarms == NO_ALARMS
+
+
+def test_probe_without_channels_has_no_alarms() -> None:
+    assert to_snapshot(probe_with_channels(), NOW).probes[0].alarms == NO_ALARMS
+
+
+def test_gateway_without_channels_has_no_pit_alarms() -> None:
+    raw = {"devices": [gateway_device()], "channels": {}}
+    gateway = to_snapshot(raw, NOW).gateway
+    assert gateway is not None
+    assert gateway.pit_alarms == NO_ALARMS
+
+
 # ---------------------------------------------------------- helpers ---
 
 
@@ -212,6 +282,33 @@ def test_to_celsius(value: Any, units: str, expected: float) -> None:
 @pytest.mark.parametrize("value", [None, "abc", True])
 def test_to_celsius_unreadable_gives_none(value: Any) -> None:
     assert to_celsius(value, "F") is None
+
+
+def test_alarm_limit_in_celsius() -> None:
+    limit = to_alarm_limit({"enabled": True, "value": 95, "units": "C"})
+    assert limit is not None
+    assert limit.celsius == pytest.approx(95.0)
+
+
+def test_unreadable_alarm_value_keeps_alarm_on() -> None:
+    """Fail-safe: an alarm you switched on stays on, even if its limit is garbled."""
+    limit = to_alarm_limit(alarm("abc"))
+    assert limit is not None
+    assert limit.enabled is True
+    assert limit.celsius is None
+
+
+@pytest.mark.parametrize("enabled", [None, "true", 1, False])
+def test_alarm_only_enabled_by_real_true(enabled: Any) -> None:
+    """Only a real true switches an alarm on; anything odd counts as off."""
+    limit = to_alarm_limit(alarm(225, enabled=enabled))
+    assert limit is not None
+    assert limit.enabled is False
+
+
+@pytest.mark.parametrize("raw", [None, "on", 225, []])
+def test_alarm_limit_from_junk_is_none(raw: Any) -> None:
+    assert to_alarm_limit(raw) is None
 
 
 def test_parse_time_formats() -> None:
