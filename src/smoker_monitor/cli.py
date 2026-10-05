@@ -71,7 +71,7 @@ def handle_snapshot(config_path: Path) -> int:
 
     now = datetime.now(UTC)
     alarms = evaluate(snapshot, now, config.alarms)
-    print(format_snapshot(snapshot, now, alarms))
+    print(format_snapshot(snapshot, now, alarms, config.alarms))
     return EXIT_ALARMS if alarms else EXIT_OK
 
 

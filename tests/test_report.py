@@ -24,6 +24,7 @@ from smoker_monitor.report import (
     format_active_alarms,
     format_age,
     format_alarms,
+    format_minutes,
     format_snapshot,
     format_temp,
 )
@@ -211,3 +212,66 @@ def test_alarm_heading_counts_alarms() -> None:
     two = [*one, Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10)]
     assert format_active_alarms(one, WITH_PROBE)[0] == "*** 1 ALARM ***"
     assert format_active_alarms(two, WITH_PROBE)[0] == "*** 2 ALARMS ***"
+
+
+# ------------------------------------------------- stale data and durations ---
+
+
+def alarming_probe(last_seen: datetime) -> Probe:
+    """A probe whose ETI high alarm says ALARMING, last heard from at `last_seen`."""
+    high = AlarmLimit(enabled=True, celsius=20.0, alarming=True)
+    return Probe(
+        serial="P1",
+        label="RFX MEAT",
+        battery_pct=100,
+        last_seen=last_seen,
+        sensors=(Reading(celsius=23.0, taken_at=last_seen),),
+        alarms=AlarmSettings(high=high, low=None),
+    )
+
+
+def test_fresh_probe_shows_alarming() -> None:
+    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(NOW),))
+    assert "Alarms:  high 20.0°C ALARMING" in format_snapshot(snapshot, NOW)
+
+
+def test_stale_probe_does_not_show_frozen_alarming() -> None:
+    """Real case: kit switched off mid-alarm, ETI still says ALARMING hours later."""
+    hours_ago = NOW - timedelta(hours=5)
+    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(hours_ago),))
+    report = format_snapshot(snapshot, NOW)
+    assert "Alarms:  high 20.0°C (no recent data)" in report
+    assert "ALARMING" not in report
+
+
+def test_staleness_uses_configured_timeout() -> None:
+    six_minutes_ago = NOW - timedelta(minutes=6)
+    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(six_minutes_ago),))
+    assert "ALARMING" not in format_snapshot(snapshot, NOW)  # default 5 min timeout
+    relaxed = AlarmRules(probe_timeout_minutes=10)
+    assert "ALARMING" in format_snapshot(snapshot, NOW, (), relaxed)
+
+
+def test_stale_gateway_pit_alarms_marked_old() -> None:
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    report = format_snapshot(to_snapshot(raw, NOW), NOW)
+    assert "Alarm: high 170.0°C, low 30.0°C (no recent data)" in report
+
+
+def test_stale_device_with_no_alarms_still_says_off() -> None:
+    assert format_alarms(NO_ALARMS, fresh=False) == "off"
+
+
+@pytest.mark.parametrize(
+    ("minutes", "words"),
+    [
+        (0.5, "0 min"),
+        (12.7, "12 min"),
+        (59.9, "59 min"),
+        (60.0, "1 h"),
+        (333.0, "5 h 33 min"),
+        (None, "?"),
+    ],
+)
+def test_format_minutes(minutes: float | None, words: str) -> None:
+    assert format_minutes(minutes) == words
