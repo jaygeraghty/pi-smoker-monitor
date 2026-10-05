@@ -15,7 +15,7 @@ import pytest
 from smoker_monitor import __version__, cli
 from smoker_monitor.cli import main
 from smoker_monitor.config import EtiCloudSettings
-from smoker_monitor.domain.models import Snapshot
+from smoker_monitor.domain.models import Gateway, Snapshot
 from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.eti_cloud import to_snapshot
 
@@ -42,7 +42,10 @@ def write_config(tmp_path: Path) -> Path:
 
 
 class FakeSource:
-    """Stands in for EtiCloudSource: returns the real capture, no network."""
+    """Stands in for EtiCloudSource: returns the real capture, no network.
+
+    That capture is weeks old, so it always raises a "Gateway silent" alarm.
+    """
 
     def __init__(self, settings: EtiCloudSettings) -> None:
         self.settings = settings
@@ -50,6 +53,23 @@ class FakeSource:
     async def fetch(self) -> Snapshot:
         raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
         return to_snapshot(raw, datetime.now(UTC))
+
+
+class FreshSource(FakeSource):
+    """Stands in for EtiCloudSource when everything is fine: a Gateway seen just now."""
+
+    async def fetch(self) -> Snapshot:
+        now = datetime.now(UTC)
+        gateway = Gateway(
+            serial="G1",
+            label="RFX GATEWAY",
+            battery_pct=80,
+            wifi_dbm=-50,
+            last_seen=now,
+            pit=None,
+            fan=None,
+        )
+        return Snapshot(taken_at=now, gateway=gateway, probes=())
 
 
 class FailingSource(FakeSource):
@@ -85,11 +105,44 @@ def test_snapshot_prints_readings(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    main(["snapshot", "--config", str(write_config(tmp_path))])
+    captured = capsys.readouterr()
+    assert "PROBE-1" in captured.out
+    assert "°C" in captured.out
+
+
+def test_snapshot_with_alarms_shows_them_and_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The old capture means the Gateway has been silent: an alarm, exit code 2."""
+    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    code = main(["snapshot", "--config", str(write_config(tmp_path))])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out.startswith("*** 1 ALARM ***")
+    assert "Gateway silent for" in captured.out
+
+
+def test_snapshot_all_fine_exits_0(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "EtiCloudSource", FreshSource)
     code = main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
     assert code == 0
-    assert "PROBE-1" in captured.out
-    assert "°C" in captured.out
+    assert "ALARM" not in captured.out
+
+
+def test_snapshot_uses_alarm_settings_from_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Switching the Gateway timeout off in [alarms] silences the old capture."""
+    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    path = write_config(tmp_path)
+    path.write_text(VALID + "\n[alarms]\ngateway_timeout = false\n", encoding="utf-8")
+    code = main(["snapshot", "--config", str(path)])
+    assert code == 0
+    assert "ALARM" not in capsys.readouterr().out
 
 
 def test_snapshot_source_error_fails_cleanly(

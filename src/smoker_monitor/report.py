@@ -1,22 +1,28 @@
-"""Plain-text report of a Snapshot, as printed by `smoker snapshot`.
+"""Plain-text report of a Snapshot and its alarms, as printed by `smoker snapshot`.
 
-Pure functions: they take a Snapshot and the current time and return text, so
-they are easy to test and could be reused later (e.g. in a log line).
+Pure functions: they take a Snapshot (plus the current time and any active
+alarms) and return text, so they are easy to test and could be reused later
+(e.g. in a log line). Wording alarms for people happens here, not in the
+alarm rules.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
+from typing import assert_never
 
+from smoker_monitor.domain.alarms import Alarm, AlarmKind
 from smoker_monitor.domain.models import AlarmSettings, Gateway, Probe, Snapshot
 
-# How old the Gateway's last report can be before we warn that data is stale.
-STALE_AFTER = timedelta(minutes=5)
 
-
-def format_snapshot(snapshot: Snapshot, now: datetime) -> str:
-    """Return a multi-line, human-readable summary of the snapshot."""
+def format_snapshot(snapshot: Snapshot, now: datetime, alarms: Sequence[Alarm] = ()) -> str:
+    """Return a multi-line, human-readable summary: any alarms first, then each device."""
     lines: list[str] = []
+
+    if alarms:
+        lines.extend(format_active_alarms(alarms, snapshot))
+        lines.append("")
 
     if snapshot.gateway is None:
         lines.append("No RFX Gateway found on this ETI Cloud account.")
@@ -27,11 +33,48 @@ def format_snapshot(snapshot: Snapshot, now: datetime) -> str:
         lines.append("")
         lines.extend(format_probe(probe, now))
 
-    if snapshot.is_stale(now, STALE_AFTER):
-        lines.append("")
-        lines.append("WARNING: no recent data from the Gateway; readings may be out of date.")
-
     return "\n".join(lines)
+
+
+def format_active_alarms(alarms: Sequence[Alarm], snapshot: Snapshot) -> list[str]:
+    """A heading plus one line per alarm, e.g. '  Pit too hot: 182.0°C (limit 170.0°C)'."""
+    heading = "*** 1 ALARM ***" if len(alarms) == 1 else f"*** {len(alarms)} ALARMS ***"
+    return [heading] + [f"  {describe_alarm(alarm, snapshot)}" for alarm in alarms]
+
+
+def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
+    """One alarm in plain English. The Snapshot supplies the device's name."""
+    name = device_name(alarm.device, snapshot)
+    value, limit = alarm.value, alarm.limit
+    match alarm.kind:
+        case AlarmKind.PIT_HIGH:
+            return f"Pit too hot: {format_temp(value)} (limit {format_temp(limit)})"
+        case AlarmKind.PIT_LOW:
+            return f"Pit too cold: {format_temp(value)} (limit {format_temp(limit)})"
+        case AlarmKind.PROBE_HIGH:
+            return f"{name} reached target: {format_temp(value)} (target {format_temp(limit)})"
+        case AlarmKind.PROBE_LOW:
+            return f"{name} too cold: {format_temp(value)} (limit {format_temp(limit)})"
+        case AlarmKind.GATEWAY_TIMEOUT:
+            if value is None:
+                return "No RFX Gateway found"
+            return f"Gateway silent for {format_minutes(value)} (limit {format_minutes(limit)})"
+        case AlarmKind.PROBE_TIMEOUT:
+            return f"{name} silent for {format_minutes(value)} (limit {format_minutes(limit)})"
+        case AlarmKind.GATEWAY_BATTERY:
+            return f"Gateway battery low: {format_percent(value)} (below {format_percent(limit)})"
+        case AlarmKind.PROBE_BATTERY:
+            return f"{name} battery low: {format_percent(value)} (below {format_percent(limit)})"
+        case _:
+            assert_never(alarm.kind)
+
+
+def device_name(serial: str, snapshot: Snapshot) -> str:
+    """A probe's name as shown in the report, e.g. 'RFX MEAT (P1)'; else the serial."""
+    for probe in snapshot.probes:
+        if probe.serial == serial:
+            return f"{probe.label or 'Probe'} ({serial})"
+    return serial
 
 
 def format_gateway(gateway: Gateway, now: datetime) -> list[str]:
@@ -102,9 +145,14 @@ def format_alarms(alarms: AlarmSettings) -> str:
     return ", ".join(parts) or "off"
 
 
-def format_percent(value: int | None) -> str:
+def format_minutes(value: float | None) -> str:
+    """e.g. 12 min (whole minutes, rounded down), or ? when unknown."""
+    return "?" if value is None else f"{int(value)} min"
+
+
+def format_percent(value: float | None) -> str:
     """e.g. 70%, or ? when unknown."""
-    return "?" if value is None else f"{value}%"
+    return "?" if value is None else f"{value:.0f}%"
 
 
 def format_dbm(value: int | None) -> str:

@@ -8,16 +8,25 @@ from pathlib import Path
 
 import pytest
 
+from smoker_monitor.domain.alarms import NO_DEVICE, Alarm, AlarmKind, AlarmRules, evaluate
 from smoker_monitor.domain.models import (
     NO_ALARMS,
     AlarmLimit,
     AlarmSettings,
     Fan,
     Gateway,
+    Probe,
     Reading,
     Snapshot,
 )
-from smoker_monitor.report import format_age, format_alarms, format_snapshot, format_temp
+from smoker_monitor.report import (
+    describe_alarm,
+    format_active_alarms,
+    format_age,
+    format_alarms,
+    format_snapshot,
+    format_temp,
+)
 from smoker_monitor.sources.eti_cloud import to_snapshot
 
 FIXTURE = Path(__file__).parent / "fixtures" / "eti_idle.json"
@@ -64,13 +73,17 @@ def test_idle_report_shows_probe_temps_in_celsius() -> None:
     assert "Core:    35.6°C" in idle_report()
 
 
-def test_idle_report_warns_data_is_stale() -> None:
-    assert "WARNING" in idle_report()
+def test_idle_report_with_its_alarms_shows_gateway_silent() -> None:
+    """Real data, kit off for weeks: the alarm block leads the report."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    snapshot = to_snapshot(raw, NOW)
+    report = format_snapshot(snapshot, NOW, evaluate(snapshot, NOW, AlarmRules()))
+    assert report.startswith("*** 1 ALARM ***\n  Gateway silent for ")
 
 
-def test_fresh_report_has_no_warning() -> None:
+def test_no_alarms_means_no_alarm_block() -> None:
     snapshot = Snapshot(taken_at=NOW, gateway=live_gateway(107.0, None), probes=())
-    assert "WARNING" not in format_snapshot(snapshot, NOW)
+    assert "ALARM" not in format_snapshot(snapshot, NOW, ())
 
 
 def test_connected_fan_shows_set_temp_and_deviation() -> None:
@@ -85,7 +98,6 @@ def test_missing_gateway_is_explained() -> None:
     snapshot = Snapshot(taken_at=NOW, gateway=None, probes=())
     report = format_snapshot(snapshot, NOW)
     assert "No RFX Gateway found" in report
-    assert "WARNING" in report
 
 
 def test_idle_report_shows_pit_alarms() -> None:
@@ -137,3 +149,65 @@ def test_format_age(age: timedelta, words: str) -> None:
 def test_format_temp() -> None:
     assert format_temp(107.25) == "107.2°C"
     assert format_temp(None) == "--"
+
+
+# ---------------------------------------------------------- active alarms ---
+
+WHITE_PROBE = Probe(
+    serial="P1",
+    label="RFX MEAT",
+    battery_pct=100,
+    last_seen=NOW,
+    sensors=(Reading(celsius=96.0, taken_at=NOW),),
+)
+WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
+
+
+@pytest.mark.parametrize(
+    ("alarm", "words"),
+    [
+        (Alarm(AlarmKind.PIT_HIGH, "G1", 182.0, 170.0), "Pit too hot: 182.0°C (limit 170.0°C)"),
+        (Alarm(AlarmKind.PIT_LOW, "G1", 25.0, 30.0), "Pit too cold: 25.0°C (limit 30.0°C)"),
+        (
+            Alarm(AlarmKind.PROBE_HIGH, "P1", 95.2, 95.0),
+            "RFX MEAT (P1) reached target: 95.2°C (target 95.0°C)",
+        ),
+        (Alarm(AlarmKind.PROBE_LOW, "P1", 2.0, 4.0), "RFX MEAT (P1) too cold: 2.0°C (limit 4.0°C)"),
+        (
+            Alarm(AlarmKind.GATEWAY_TIMEOUT, "G1", 12.7, 5.0),
+            "Gateway silent for 12 min (limit 5 min)",
+        ),
+        (Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0), "No RFX Gateway found"),
+        (
+            Alarm(AlarmKind.PROBE_TIMEOUT, "P1", 7.0, 5.0),
+            "RFX MEAT (P1) silent for 7 min (limit 5 min)",
+        ),
+        (Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10), "Gateway battery low: 8% (below 10%)"),
+        (Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10), "RFX MEAT (P1) battery low: 5% (below 10%)"),
+    ],
+)
+def test_describe_alarm(alarm: Alarm, words: str) -> None:
+    assert describe_alarm(alarm, WITH_PROBE) == words
+
+
+def test_every_alarm_kind_has_wording() -> None:
+    """A new AlarmKind without wording would fail here (and in mypy)."""
+    for kind in AlarmKind:
+        assert describe_alarm(Alarm(kind, "P1", 1.0, 2.0), WITH_PROBE)
+
+
+def test_unreadable_limit_is_shown_as_dashes() -> None:
+    alarm = Alarm(AlarmKind.PROBE_HIGH, "P1", 96.0, None)
+    assert describe_alarm(alarm, WITH_PROBE) == "RFX MEAT (P1) reached target: 96.0°C (target --)"
+
+
+def test_unknown_device_falls_back_to_serial() -> None:
+    alarm = Alarm(AlarmKind.PROBE_HIGH, "P9", 96.0, 95.0)
+    assert describe_alarm(alarm, WITH_PROBE).startswith("P9 reached target")
+
+
+def test_alarm_heading_counts_alarms() -> None:
+    one = [Alarm(AlarmKind.PIT_HIGH, "G1", 182.0, 170.0)]
+    two = [*one, Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10)]
+    assert format_active_alarms(one, WITH_PROBE)[0] == "*** 1 ALARM ***"
+    assert format_active_alarms(two, WITH_PROBE)[0] == "*** 2 ALARMS ***"
