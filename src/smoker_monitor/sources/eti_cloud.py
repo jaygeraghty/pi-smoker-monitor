@@ -16,7 +16,10 @@ The raw data has this shape:
 What the raw data looks like in practice (from a real capture):
 - device_name "rfx gateway" is the Gateway. Its channel 1 is the pit (air) probe,
   and its "fan" block is the Billows fan.
-- device_name "rfx meat" is a meat probe. Channels 1-4 are its sensors.
+- device_name "rfx meat" is a meat probe. Channel 0 is the whole probe: the big
+  PROBE number in the app, and where the app saves the probe's alarms.
+  Channels 1-4 are its individual sensors (their alarm fields are unused).
+  The Gateway has no channel 0.
 - Temperatures are in °F. Some values are numbers (96.1), some text ("154").
 - A channel with status "NO PROBE" has nothing plugged in; its value is stale.
 - fan.set_temp has no units of its own; we assume °F like everything else.
@@ -57,9 +60,13 @@ NO_READING_STATUSES = {"NO PROBE"}
 # counts as stale, so missing data errs towards raising the alarm.
 LONG_AGO = datetime(1970, 1, 1, tzinfo=UTC)
 
-# ETI numbers channels from 1. A probe has 4 sensors and the Gateway has 1,
-# so we stop at the first missing channel; this is just a safety limit.
+# ETI numbers sensor channels from 1. A probe has 4 sensors and the Gateway has
+# 1, so we stop at the first missing channel; this is just a safety limit.
 MAX_CHANNELS = 10
+
+# A meat probe's channel 0 is the whole probe (the app's big PROBE number). It is
+# where the app saves the probe's alarms.
+WHOLE_PROBE_CHANNEL = 0
 
 
 # ----------------------------------------------------------------- fetching ---
@@ -126,15 +133,33 @@ async def fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
 
 
 async def fetch_channels(cloud: ThermoworksCloud, serial: str) -> list[dict[str, Any]]:
-    """Return all channels for one device, stopping at the first one that doesn't exist."""
+    """Return all channels for one device.
+
+    Meat probes have a channel 0 (the whole probe, holding its alarms) and then
+    channels 1-4. The Gateway has no channel 0, only channel 1. So channel 0 is
+    fetched on its own, fine if missing, and then 1, 2, 3, ... until the first
+    one that doesn't exist.
+    """
     found = []
+    whole_probe = await fetch_channel(cloud, serial, WHOLE_PROBE_CHANNEL)
+    if whole_probe is not None:
+        found.append(whole_probe)
     for number in range(1, MAX_CHANNELS + 1):
-        try:
-            channel = await cloud.get_device_channel(device_serial=serial, channel=str(number))
-        except ResourceNotFoundError:
+        channel = await fetch_channel(cloud, serial, number)
+        if channel is None:
             break
-        found.append(asdict(channel))
+        found.append(channel)
     return found
+
+
+async def fetch_channel(cloud: ThermoworksCloud, serial: str, number: int) -> dict[str, Any] | None:
+    """Return one channel as plain data, or None if the device doesn't have it."""
+    try:
+        channel = await cloud.get_device_channel(device_serial=serial, channel=str(number))
+    except ResourceNotFoundError:
+        return None
+    result: dict[str, Any] = asdict(channel)
+    return result
 
 
 # ------------------------------------------------------------------ mapping ---
@@ -184,10 +209,16 @@ def to_probe(device: dict[str, Any], channels: list[dict[str, Any]]) -> Probe:
     """Map a raw meat-probe device and its channels to a Probe."""
     last_seen = parse_time(device.get("last_seen")) or LONG_AGO
     sorted_channels = sort_channels(channels)
-    sensors = tuple(to_reading(channel, last_seen) for channel in sorted_channels)
-    # Alarms are set per probe in the ETI app, and every sensor carries the
-    # same settings, so channel 1's settings stand for the whole probe.
-    alarms = to_alarm_settings(sorted_channels[0]) if sorted_channels else NO_ALARMS
+    whole_probe = [c for c in sorted_channels if channel_number(c) == WHOLE_PROBE_CHANNEL]
+    sensor_channels = [c for c in sorted_channels if channel_number(c) != WHOLE_PROBE_CHANNEL]
+
+    # Only channels 1-4 are sensors; channel 0 is a summary of them.
+    sensors = tuple(to_reading(channel, last_seen) for channel in sensor_channels)
+
+    # The app saves a probe's alarms on channel 0. Data without a channel 0
+    # (older captures) falls back to channel 1.
+    alarm_channels = whole_probe or sensor_channels
+    alarms = to_alarm_settings(alarm_channels[0]) if alarm_channels else NO_ALARMS
 
     return Probe(
         serial=str(device.get("serial")),
@@ -261,13 +292,18 @@ def to_reading(channel: dict[str, Any], fallback_time: datetime) -> Reading:
 
 
 def sort_channels(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return channels in number order (1, 2, 3, ...). Unnumbered ones go last."""
+    """Return channels in number order (0, 1, 2, ...). Unnumbered ones go last."""
 
-    def number(channel: dict[str, Any]) -> int:
-        value = to_int(channel.get("number"))
-        return value if value is not None else 999
+    def order(channel: dict[str, Any]) -> int:
+        number = channel_number(channel)
+        return number if number is not None else 999
 
-    return sorted(channels, key=number)
+    return sorted(channels, key=order)
+
+
+def channel_number(channel: dict[str, Any]) -> int | None:
+    """A channel's number (ETI sends it as text, e.g. "1"), or None if missing."""
+    return to_int(channel.get("number"))
 
 
 def to_celsius(value: Any, units: Any) -> float | None:
