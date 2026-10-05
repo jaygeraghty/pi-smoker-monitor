@@ -4,22 +4,39 @@ Pure logic, no network or hardware: `evaluate` takes a Snapshot and returns
 the alarms that should be going off at this moment. Remembering alarms over
 time (delays, silencing) is a separate job for the alarm state machine.
 
+Fresh data only: a device counts as fresh if it reported within its timeout
+([alarms] gateway_timeout_minutes / probe_timeout_minutes). Temperature and
+battery alarms only look at fresh devices, so old data (a probe left in a
+drawer, a Gateway that went offline) can never set them off. Missing or old
+data is the job of the timeout alarms instead.
+
 How a temperature limit (a high or low alarm) is checked:
 1. Is that kind of alarm switched on in [alarms]? If not, skip it.
 2. Which limit applies? A custom (Pi-side) limit if set, otherwise ETI's.
 3. Is that limit enabled? If not, skip it.
 4. Alarm if ETI says it is alarming (only when using ETI's own limit), or if
    the temperature has reached the limit: >= for high, <= for low.
+
+Timeouts:
+- Gateway: alarm if it hasn't reported within its timeout, or is missing.
+- Probe: alarm only for probes that are part of this cook (`live_probes`: ones
+  the Pi has seen reporting since it started watching) and have gone quiet.
+  A probe that was never live, e.g. left in a drawer, is ignored.
+
+Batteries: alarm below the [alarms] percentage; 0 switches it off.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Set
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from smoker_monitor.domain.models import NO_ALARMS, AlarmLimit, AlarmSettings, Snapshot
+
+# Device name used for an alarm about a Gateway that isn't in the data at all.
+NO_DEVICE = ""
 
 
 @dataclass(frozen=True)
@@ -44,12 +61,16 @@ class AlarmRules:
 
 
 class AlarmKind(StrEnum):
-    """What kind of thing is wrong. Values match the [alarms] switch names."""
+    """What kind of thing is wrong. Values match the [alarms] setting names."""
 
     PIT_HIGH = "pit_high"
     PIT_LOW = "pit_low"
     PROBE_HIGH = "probe_high"  # meat reached its target
     PROBE_LOW = "probe_low"
+    GATEWAY_TIMEOUT = "gateway_timeout"
+    PROBE_TIMEOUT = "probe_timeout"
+    GATEWAY_BATTERY = "gateway_battery"  # set by gateway_battery_pct
+    PROBE_BATTERY = "probe_battery"  # set by probe_battery_pct
 
 
 @dataclass(frozen=True)
@@ -59,12 +80,18 @@ class Alarm:
     `kind` and `device` together identify the alarm (e.g. "probe_high on the
     white probe"), so it can be tracked over time and silenced. Wording it for
     a screen is the display's job, not this class's.
+
+    `value` and `limit` depend on the kind:
+    - temperature alarms: °C now, and the limit it crossed (None if unreadable)
+    - timeouts: minutes since the device last reported, and the timeout
+      (value is None if the Gateway is missing altogether)
+    - batteries: percent now, and the percentage it fell below
     """
 
     kind: AlarmKind
-    device: str  # serial of the Gateway or probe
-    celsius: float | None  # the temperature that triggered it
-    limit_celsius: float | None  # the limit it crossed (None if unreadable)
+    device: str  # serial of the Gateway or probe (NO_DEVICE if missing)
+    value: float | None
+    limit: float | None
 
 
 def evaluate(
@@ -72,18 +99,41 @@ def evaluate(
     now: datetime,
     rules: AlarmRules,
     custom: Mapping[str, AlarmSettings] | None = None,
+    live_probes: Set[str] | None = None,
 ) -> tuple[Alarm, ...]:
     """Return every alarm that should be going off right now (empty if all is well).
 
     `custom` holds limits set on the Pi, keyed by device serial; each side (high
-    or low) that is set replaces ETI's for that device. `now` is not used yet:
-    it is for the timeout rules, which come next.
+    or low) that is set replaces ETI's for that device. `live_probes` holds the
+    serials of probes seen reporting during this cook (see `fresh_probes`); only
+    those can raise a "gone quiet" alarm.
     """
     custom = custom or {}
+    live_probes = live_probes or frozenset()
+    gateway_limit = timedelta(minutes=rules.gateway_timeout_minutes)
+    probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     found: list[Alarm | None] = []
 
     gateway = snapshot.gateway
-    if gateway is not None:
+    if gateway is None:
+        if rules.gateway_timeout:
+            found.append(Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, minutes(gateway_limit)))
+    elif not is_fresh(gateway.last_seen, now, gateway_limit):
+        if rules.gateway_timeout:
+            found.append(
+                timeout_alarm(
+                    AlarmKind.GATEWAY_TIMEOUT, gateway.serial, gateway.last_seen, now, gateway_limit
+                )
+            )
+    else:
+        found.append(
+            check_battery(
+                AlarmKind.GATEWAY_BATTERY,
+                gateway.serial,
+                gateway.battery_pct,
+                rules.gateway_battery_pct,
+            )
+        )
         pit = gateway.get_pit_temp()
         eti = gateway.pit_alarms
         mine = custom.get(gateway.serial, NO_ALARMS)
@@ -97,6 +147,20 @@ def evaluate(
             )
 
     for probe in snapshot.probes:
+        if not is_fresh(probe.last_seen, now, probe_limit):
+            if rules.probe_timeout and probe.serial in live_probes:
+                found.append(
+                    timeout_alarm(
+                        AlarmKind.PROBE_TIMEOUT, probe.serial, probe.last_seen, now, probe_limit
+                    )
+                )
+            continue
+
+        found.append(
+            check_battery(
+                AlarmKind.PROBE_BATTERY, probe.serial, probe.battery_pct, rules.probe_battery_pct
+            )
+        )
         core = probe.core_celsius()
         eti = probe.alarms
         mine = custom.get(probe.serial, NO_ALARMS)
@@ -110,6 +174,20 @@ def evaluate(
             )
 
     return tuple(alarm for alarm in found if alarm is not None)
+
+
+def fresh_probes(snapshot: Snapshot, now: datetime, rules: AlarmRules) -> frozenset[str]:
+    """Serials of the probes reporting right now (within the probe timeout).
+
+    The service adds these to its `live_probes` set every poll, so a probe that
+    was ever fresh during the cook is remembered, and can then raise a "gone
+    quiet" alarm if it stops reporting.
+    """
+    limit = timedelta(minutes=rules.probe_timeout_minutes)
+    return frozenset(p.serial for p in snapshot.probes if is_fresh(p.last_seen, now, limit))
+
+
+# ---------------------------------------------------------------- checks ---
 
 
 def check_limit(
@@ -131,7 +209,7 @@ def check_limit(
 
     eti_says_alarming = custom_limit is None and limit.alarming
     if eti_says_alarming or has_reached(celsius, limit.celsius, high):
-        return Alarm(kind=kind, device=device, celsius=celsius, limit_celsius=limit.celsius)
+        return Alarm(kind=kind, device=device, value=celsius, limit=limit.celsius)
     return None
 
 
@@ -144,3 +222,30 @@ def has_reached(celsius: float | None, limit_celsius: float | None, high: bool) 
     if celsius is None or limit_celsius is None:
         return False
     return celsius >= limit_celsius if high else celsius <= limit_celsius
+
+
+def check_battery(kind: AlarmKind, device: str, pct: int | None, below: int) -> Alarm | None:
+    """Alarm if the battery is below `below` percent. 0 switches it off; unknown is ignored."""
+    if below == 0 or pct is None or pct >= below:
+        return None
+    return Alarm(kind=kind, device=device, value=pct, limit=below)
+
+
+def timeout_alarm(
+    kind: AlarmKind, device: str, last_seen: datetime, now: datetime, limit: timedelta
+) -> Alarm:
+    """An alarm saying how long a device has been quiet, against its timeout."""
+    return Alarm(kind=kind, device=device, value=minutes(now - last_seen), limit=minutes(limit))
+
+
+# --------------------------------------------------------------- helpers ---
+
+
+def is_fresh(last_seen: datetime, now: datetime, limit: timedelta) -> bool:
+    """True if the device reported within `limit`. Exactly on the limit still counts."""
+    return now - last_seen <= limit
+
+
+def minutes(age: timedelta) -> float:
+    """A time difference in minutes, e.g. 90 seconds -> 1.5."""
+    return age.total_seconds() / 60
