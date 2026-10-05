@@ -1,8 +1,9 @@
 """ETI Cloud adapter: fetches raw ETI Cloud data and turns it into a Snapshot.
 
 This module has two halves:
-- Fetching: `EtiCloudSource` logs in with the `thermoworks-cloud` library and
-  downloads every device and its channels (`fetch_raw`).
+- Fetching: `EtiCloudSource` logs in with the `thermoworks-cloud` library,
+  keeps the connection open between polls, and downloads every device and its
+  channels (`download`). Each fetch has a time limit.
 - Mapping: pure functions (`to_snapshot` and friends) that convert that raw data
   into our domain models. No network, so they are fully testable against
   tests/fixtures/eti_idle.json.
@@ -28,6 +29,7 @@ What the raw data looks like in practice (from a real capture):
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -71,65 +73,107 @@ WHOLE_PROBE_CHANNEL = 0
 
 # ----------------------------------------------------------------- fetching ---
 
+# How long one fetch may take before we give up on it. A normal fetch takes a
+# second or two. Without a limit, a request ETI never answers would hang the
+# monitor forever: no alarms, no silence button. Kept under the 30 s poll.
+FETCH_TIMEOUT_SECONDS = 20.0
+
 
 class EtiCloudSource:
-    """A Source that reads your RFX Gateway, Billows and RFX probes from ETI Cloud."""
+    """A Source that reads your RFX Gateway, Billows and RFX probes from ETI Cloud.
 
-    def __init__(self, settings: EtiCloudSettings) -> None:
+    It logs in on the first fetch and keeps that connection for the next ones
+    (the library refreshes the login token by itself when it expires). After
+    any failure the connection is thrown away, so the next fetch starts afresh
+    with a new login. Call `close()` when finished with it.
+    """
+
+    def __init__(
+        self, settings: EtiCloudSettings, timeout_seconds: float = FETCH_TIMEOUT_SECONDS
+    ) -> None:
         self._settings = settings
+        self._timeout_seconds = timeout_seconds
+        self._session: ClientSession | None = None
+        self._cloud: ThermoworksCloud | None = None
 
     async def fetch(self) -> Snapshot:
         """Download the latest data and return it as a Snapshot.
 
         Raises SourceError, with a message safe to show the user, if anything
-        goes wrong (no internet, wrong password, ETI Cloud down, ...).
+        goes wrong (no internet, wrong password, ETI Cloud down or too slow, ...).
         """
         try:
-            raw = await fetch_raw(self._settings)
-        except SourceError:
-            raise
+            async with asyncio.timeout(self._timeout_seconds):
+                cloud = await self._connect()
+                raw = await download(cloud)
         except Exception as e:
-            # Belt and braces: make sure the password can never leak into
-            # the message, even if a library includes it in an error.
-            detail = str(e).replace(self._settings.password, "***")
-            raise SourceError(
-                f"Couldn't fetch from ETI Cloud ({type(e).__name__}: {detail})"
-            ) from e
+            await self.close()
+            raise self._as_source_error(e) from e
         return to_snapshot(raw, datetime.now(UTC))
 
+    async def close(self) -> None:
+        """Close the connection, if one is open. Safe to call at any time."""
+        session = self._session
+        self._session = None
+        self._cloud = None
+        if session is not None:
+            await session.close()
 
-async def fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
-    """Log in to ETI Cloud and return every device and its channels as plain data.
+    async def _connect(self) -> ThermoworksCloud:
+        """The logged-in connection, logging in first if there isn't one."""
+        if self._cloud is None:
+            self._session = ClientSession()
+            self._cloud = await log_in(self._session, self._settings)
+        return self._cloud
 
-    Each call opens a fresh connection and logs in again. That's fine for a
-    one-off snapshot; the long-running service will keep a session open instead.
-    """
-    async with ClientSession() as session:
-        # The api_key, app_id and referer point the library at ETI Cloud
-        # rather than its default (ThermoWorks Cloud).
-        auth = await AuthFactory(
-            session,
-            api_key=settings.api_key,
-            app_id=settings.app_id,
-            referer=settings.referer,
-        ).build_auth(settings.email, settings.password)
-        cloud = ThermoworksCloud(auth)
+    def _as_source_error(self, error: Exception) -> SourceError:
+        """Turn any failure into a SourceError whose message is safe to show."""
+        if isinstance(error, SourceError):
+            return error
+        if isinstance(error, TimeoutError):
+            return SourceError(f"ETI Cloud didn't answer within {self._timeout_seconds:g} s")
+        # Belt and braces: make sure the password can never leak into the
+        # message, even if a library includes it in an error.
+        detail = str(error).replace(self._settings.password, "***")
+        return SourceError(f"Couldn't fetch from ETI Cloud ({type(error).__name__}: {detail})")
 
-        user = await cloud.get_user()
-        if not user.account_id:
-            raise SourceError("ETI Cloud returned no account for this login")
-        devices = await cloud.get_devices(user.account_id)
 
-        channels: dict[str, list[dict[str, Any]]] = {}
-        for device in devices:
-            if device.serial:
-                channels[device.serial] = await fetch_channels(cloud, device.serial)
+async def log_in(session: ClientSession, settings: EtiCloudSettings) -> ThermoworksCloud:
+    """Log in to ETI Cloud and return a connection ready to download from."""
+    # The api_key, app_id and referer point the library at ETI Cloud rather
+    # than its default (ThermoWorks Cloud).
+    auth = await AuthFactory(
+        session,
+        api_key=settings.api_key,
+        app_id=settings.app_id,
+        referer=settings.referer,
+    ).build_auth(settings.email, settings.password)
+    return ThermoworksCloud(auth)
+
+
+async def download(cloud: ThermoworksCloud) -> dict[str, Any]:
+    """Return every device and its channels as plain data."""
+    user = await cloud.get_user()
+    if not user.account_id:
+        raise SourceError("ETI Cloud returned no account for this login")
+    devices = await cloud.get_devices(user.account_id)
+
+    channels: dict[str, list[dict[str, Any]]] = {}
+    for device in devices:
+        if device.serial:
+            channels[device.serial] = await fetch_channels(cloud, device.serial)
 
     raw = {"devices": [asdict(device) for device in devices], "channels": channels}
     # Round-trip through JSON so datetimes become plain text, exactly like the
     # saved fixtures. The mapping functions below then only deal with one format.
     result: dict[str, Any] = json.loads(json.dumps(raw, default=str))
     return result
+
+
+async def fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
+    """Log in, download everything once, and close. Used by the capture script."""
+    async with ClientSession() as session:
+        return await download(await log_in(session, settings))
 
 
 async def fetch_channels(cloud: ThermoworksCloud, serial: str) -> list[dict[str, Any]]:

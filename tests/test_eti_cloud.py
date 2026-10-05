@@ -367,29 +367,115 @@ SETTINGS = EtiCloudSettings(
 )
 
 
-async def test_source_returns_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
-    """fetch() maps whatever fetch_raw downloads into a Snapshot."""
+class FakeSession:
+    """Stands in for aiohttp's ClientSession: just remembers being closed."""
 
-    async def fake_fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
+    opened = 0
+
+    def __init__(self) -> None:
+        FakeSession.opened += 1
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeEti:
+    """Stands in for logging in to, and downloading from, ETI Cloud.
+
+    `results` are what each download gives, in order: raw data, an error to
+    raise, or a number of seconds to hang for.
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *results: object) -> None:
+        self.results = list(results)
+        self.logins = 0
+        self.sessions: list[FakeSession] = []
+        FakeSession.opened = 0
+        monkeypatch.setattr(eti_cloud, "ClientSession", FakeSession)
+        monkeypatch.setattr(eti_cloud, "log_in", self.log_in)
+        monkeypatch.setattr(eti_cloud, "download", self.download)
+
+    async def log_in(self, session: FakeSession, settings: EtiCloudSettings) -> object:
+        self.logins += 1
+        self.sessions.append(session)
+        return object()  # the "connection"; FakeEti.download ignores it
+
+    async def download(self, cloud: object) -> dict[str, Any]:
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        if isinstance(result, float):
+            await asyncio.sleep(result)
         return load_raw()
 
-    monkeypatch.setattr(eti_cloud, "fetch_raw", fake_fetch_raw)
+
+async def test_source_returns_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeEti(monkeypatch, "ok")
     snapshot = await EtiCloudSource(SETTINGS).fetch()
     assert snapshot.gateway is not None
     assert len(snapshot.probes) == 2
 
 
+async def test_source_logs_in_once_and_reuses_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    eti = FakeEti(monkeypatch, "ok", "ok", "ok")
+    source = EtiCloudSource(SETTINGS)
+    for _ in range(3):
+        await source.fetch()
+    assert eti.logins == 1
+    assert FakeSession.opened == 1
+
+
+async def test_failure_throws_connection_away_and_next_fetch_logs_in_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    eti = FakeEti(monkeypatch, "ok", RuntimeError("connection reset"), "ok")
+    source = EtiCloudSource(SETTINGS)
+    await source.fetch()
+    with pytest.raises(SourceError, match="connection reset"):
+        await source.fetch()
+    assert eti.sessions[0].closed
+
+    await source.fetch()
+    assert eti.logins == 2
+    assert not eti.sessions[1].closed
+
+
+async def test_slow_eti_gives_up_after_the_time_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A request ETI never answers must not hang the monitor."""
+    eti = FakeEti(monkeypatch, 5.0)
+    source = EtiCloudSource(SETTINGS, timeout_seconds=0.05)
+    with pytest.raises(SourceError, match=r"didn't answer within 0\.05 s"):
+        await source.fetch()
+    assert eti.sessions[0].closed
+
+
+def test_default_time_limit_is_shorter_than_a_poll() -> None:
+    assert eti_cloud.FETCH_TIMEOUT_SECONDS == 20
+    assert eti_cloud.FETCH_TIMEOUT_SECONDS < 30
+
+
 async def test_source_wraps_errors_without_password(monkeypatch: pytest.MonkeyPatch) -> None:
     """Any failure becomes a SourceError, and the password is never echoed."""
-
-    async def failing_fetch_raw(settings: EtiCloudSettings) -> dict[str, Any]:
-        raise RuntimeError("login failed for password s3cret-pw")
-
-    monkeypatch.setattr(eti_cloud, "fetch_raw", failing_fetch_raw)
+    FakeEti(monkeypatch, RuntimeError("login failed for password s3cret-pw"))
     with pytest.raises(SourceError) as exc:
         await EtiCloudSource(SETTINGS).fetch()
     assert "login failed" in str(exc.value)
     assert "s3cret-pw" not in str(exc.value)
+
+
+async def test_close_closes_the_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    eti = FakeEti(monkeypatch, "ok")
+    source = EtiCloudSource(SETTINGS)
+    await source.fetch()
+    await source.close()
+    assert eti.sessions[0].closed
+
+
+async def test_close_without_a_connection_is_fine() -> None:
+    await EtiCloudSource(SETTINGS).close()
 
 
 # ----------------------------------------------------- fetching channels ---
@@ -450,5 +536,12 @@ def test_live_fetch_from_eti_cloud() -> None:
     if not config_path.exists():
         pytest.skip("needs config.toml with your ETI Cloud login")
     source = EtiCloudSource(load_config(config_path).eti_cloud)
-    snapshot = asyncio.run(source.fetch())
+
+    async def fetch_and_close() -> Snapshot:
+        try:
+            return await source.fetch()
+        finally:
+            await source.close()
+
+    snapshot = asyncio.run(fetch_and_close())
     assert snapshot.gateway is not None

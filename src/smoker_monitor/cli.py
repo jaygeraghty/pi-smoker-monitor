@@ -26,10 +26,11 @@ from pathlib import Path
 from smoker_monitor import __version__
 from smoker_monitor.config import ConfigError, load_config
 from smoker_monitor.domain.alarms import evaluate
+from smoker_monitor.domain.models import Snapshot
 from smoker_monitor.notifiers.console import ConsoleNotifier
 from smoker_monitor.report import format_snapshot
 from smoker_monitor.service.monitor import Monitor, request_silence
-from smoker_monitor.sources.base import SourceError
+from smoker_monitor.sources.base import Source, SourceError
 from smoker_monitor.sources.eti_cloud import EtiCloudSource
 
 EXIT_OK = 0
@@ -89,9 +90,8 @@ def handle_snapshot(config_path: Path) -> int:
         print(f"Config problem: {e}", file=sys.stderr)
         return EXIT_FAILED
 
-    source = EtiCloudSource(config.eti_cloud)
     try:
-        snapshot = asyncio.run(source.fetch())
+        snapshot = asyncio.run(fetch_once(EtiCloudSource(config.eti_cloud)))
     except SourceError as e:
         print(f"Couldn't get readings: {e}", file=sys.stderr)
         return EXIT_FAILED
@@ -100,6 +100,14 @@ def handle_snapshot(config_path: Path) -> int:
     alarms = evaluate(snapshot, now, config.alarms)
     print(format_snapshot(snapshot, now, alarms, config.alarms))
     return EXIT_ALARMS if alarms else EXIT_OK
+
+
+async def fetch_once(source: Source) -> Snapshot:
+    """Fetch one Snapshot, then close the source's connection."""
+    try:
+        return await source.fetch()
+    finally:
+        await source.close()
 
 
 def handle_run(config_path: Path, state_dir: Path) -> int:

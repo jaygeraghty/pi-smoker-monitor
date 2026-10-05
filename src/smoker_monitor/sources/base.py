@@ -32,3 +32,7 @@ class Source(Protocol):
         Raises SourceError if the data can't be fetched.
         """
         ...
+
+    async def close(self) -> None:
+        """Let go of any open connection. Called once, when finished."""
+        ...
