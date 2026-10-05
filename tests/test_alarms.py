@@ -16,6 +16,7 @@ from smoker_monitor.domain.alarms import (
     AlarmRules,
     evaluate,
     fresh_probes,
+    while_unreachable,
 )
 from smoker_monitor.domain.models import (
     AlarmLimit,
@@ -347,3 +348,38 @@ def test_alarm_kinds_match_config_setting_names() -> None:
     settings = {f.name for f in fields(AlarmRules)}
     for kind in AlarmKind:
         assert kind.value in settings or f"{kind.value}_pct" in settings, kind
+
+
+# ------------------------------------------------------ ETI unreachable ---
+
+FAILING_SINCE = NOW - timedelta(minutes=6)
+OLD_DATA_ALARMS = (
+    Alarm(AlarmKind.GATEWAY_TIMEOUT, "G1", 6.0, 5.0),
+    Alarm(AlarmKind.PROBE_TIMEOUT, "P1", 6.0, 5.0),
+    Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10),
+)
+
+
+def test_unreachable_drops_timeouts_and_adds_its_own_alarm() -> None:
+    alarms = while_unreachable(OLD_DATA_ALARMS, FAILING_SINCE, NOW, AlarmRules())
+    assert kinds(alarms) == [AlarmKind.PROBE_BATTERY, AlarmKind.ETI_UNREACHABLE]
+    assert alarms[-1] == Alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, 6.0, 5.0)
+
+
+def test_short_outage_only_drops_timeouts() -> None:
+    """A blip shorter than eti_unreachable_minutes makes no noise of its own."""
+    just_now = NOW - timedelta(minutes=5)  # exactly on the limit: not yet
+    alarms = while_unreachable(OLD_DATA_ALARMS, just_now, NOW, AlarmRules())
+    assert kinds(alarms) == [AlarmKind.PROBE_BATTERY]
+
+
+def test_unreachable_alarm_can_be_switched_off() -> None:
+    rules = AlarmRules(eti_unreachable=False)
+    alarms = while_unreachable(OLD_DATA_ALARMS, FAILING_SINCE, NOW, rules)
+    assert kinds(alarms) == [AlarmKind.PROBE_BATTERY]
+
+
+def test_unreachable_uses_its_own_minutes() -> None:
+    rules = AlarmRules(eti_unreachable_minutes=10)
+    alarms = while_unreachable((), FAILING_SINCE, NOW, rules)
+    assert alarms == ()

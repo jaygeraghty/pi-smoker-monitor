@@ -19,9 +19,11 @@ Repo layout, tooling (uv, ruff, mypy, pytest, pre-commit), CI, docs.
 
 ## Milestone 3 — Run as a service
 - [ ] Async service loop with retries and back-off
-- [ ] Notifiers: console, sound, Pushover
+- [x] Console notifier
+- [ ] Notifiers: sound, Pushover
 - [ ] Hardware: acknowledge button + LED (with PC fake)
-- [ ] `smoker run`; systemd unit in `deploy/systemd/`
+- [x] `smoker run` and `smoker silence`, status file for screens
+- [ ] systemd unit in `deploy/systemd/`
 - [ ] Live test on a real cook
 
 ## Milestone 4 — Touchscreen UI

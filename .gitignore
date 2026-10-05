@@ -30,6 +30,9 @@ config.toml
 # Raw captures from your own account (commit only redacted fixtures)
 captures/
 
+# The running monitor's status file and silence requests
+state/
+
 # Replit's own files (editor setup, not part of the project)
 .replit
 replit.nix
