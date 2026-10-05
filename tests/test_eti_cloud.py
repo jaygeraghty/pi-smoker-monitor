@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.eti_cloud import (
     LONG_AGO,
     EtiCloudSource,
+    fetch_channels,
     parse_time,
     to_alarm_limit,
     to_celsius,
@@ -237,8 +239,8 @@ def test_alarming_flag_is_read() -> None:
     assert high.alarming is True
 
 
-def test_probe_alarms_come_from_channel_one() -> None:
-    """Channels arrive in any order; the probe's alarms are always channel 1's."""
+def test_probe_alarms_fall_back_to_channel_one() -> None:
+    """Data without a channel 0 (older captures) uses channel 1's alarms, in any order."""
     raw = probe_with_channels(
         {**channel("2", 100), "alarm_high": alarm(250)},
         {**channel("1", 100), "alarm_high": alarm(200)},
@@ -246,6 +248,34 @@ def test_probe_alarms_come_from_channel_one() -> None:
     high = to_snapshot(raw, NOW).probes[0].alarms.high
     assert high is not None
     assert high.celsius == pytest.approx(f_to_c(200))
+
+
+def whole_probe_channel(high: dict[str, Any]) -> dict[str, Any]:
+    """A raw channel 0, as seen live: the app's alarm in °C, the reading in °F."""
+    return {**channel("0", 75.9), "status": "HIGH", "alarm_high": high}
+
+
+def test_probe_alarms_come_from_whole_probe_channel() -> None:
+    """Real data: the app saves probe alarms on channel 0, not on the sensors."""
+    app_alarm = {"enabled": True, "alarming": True, "value": 20, "units": "C"}
+    raw = probe_with_channels(
+        {**channel("1", 75.9), "alarm_high": alarm(165, enabled=False)},
+        whole_probe_channel(app_alarm),
+    )
+    high = to_snapshot(raw, NOW).probes[0].alarms.high
+    assert high is not None
+    assert high.enabled is True
+    assert high.alarming is True
+    assert high.celsius == pytest.approx(20.0)
+
+
+def test_whole_probe_channel_is_not_a_sensor() -> None:
+    """Channel 0 summarises the sensors, so it must not be counted as a fifth one."""
+    app_alarm = {"enabled": False, "alarming": False, "value": 0, "units": "C"}
+    sensors = [channel(str(n), 100 + n) for n in range(1, 5)]
+    raw = probe_with_channels(whole_probe_channel(app_alarm), *sensors)
+    readings = to_snapshot(raw, NOW).probes[0].sensors
+    assert [r.celsius for r in readings] == pytest.approx([f_to_c(100 + n) for n in range(1, 5)])
 
 
 def test_channel_without_alarms_gives_none() -> None:
@@ -360,6 +390,57 @@ async def test_source_wraps_errors_without_password(monkeypatch: pytest.MonkeyPa
         await EtiCloudSource(SETTINGS).fetch()
     assert "login failed" in str(exc.value)
     assert "s3cret-pw" not in str(exc.value)
+
+
+# ----------------------------------------------------- fetching channels ---
+
+
+class MissingChannel(Exception):
+    """Stands in for the library's ResourceNotFoundError."""
+
+
+@dataclass
+class FakeChannel:
+    """Stands in for the library's channel object (fetch_channels calls asdict on it)."""
+
+    number: str
+
+
+class FakeCloud:
+    """Stands in for ThermoworksCloud: knows which channel numbers each device has."""
+
+    def __init__(self, channels: dict[str, set[str]]) -> None:
+        self.channels = channels
+        self.asked_for: list[str] = []
+
+    async def get_device_channel(self, device_serial: str, channel: str) -> FakeChannel:
+        self.asked_for.append(channel)
+        if channel not in self.channels[device_serial]:
+            raise MissingChannel(channel)
+        return FakeChannel(number=channel)
+
+
+@pytest.fixture
+def fake_cloud(monkeypatch: pytest.MonkeyPatch) -> FakeCloud:
+    """A FakeCloud with one probe (channels 0-4) and one Gateway (channel 1 only)."""
+    monkeypatch.setattr(eti_cloud, "ResourceNotFoundError", MissingChannel)
+    return FakeCloud({"P1": {"0", "1", "2", "3", "4"}, "G1": {"1"}})
+
+
+async def test_fetch_channels_includes_whole_probe_channel(fake_cloud: FakeCloud) -> None:
+    found = await fetch_channels(fake_cloud, "P1")
+    assert [c["number"] for c in found] == ["0", "1", "2", "3", "4"]
+
+
+async def test_fetch_channels_carries_on_without_channel_zero(fake_cloud: FakeCloud) -> None:
+    """The Gateway has no channel 0; that must not stop channel 1 being fetched."""
+    found = await fetch_channels(fake_cloud, "G1")
+    assert [c["number"] for c in found] == ["1"]
+
+
+async def test_fetch_channels_stops_at_first_missing(fake_cloud: FakeCloud) -> None:
+    await fetch_channels(fake_cloud, "P1")
+    assert fake_cloud.asked_for == ["0", "1", "2", "3", "4", "5"]
 
 
 @pytest.mark.live
