@@ -24,10 +24,17 @@ interval_seconds = 30
 units = "C"   # "C" or "F" — ETI Cloud stores °F; we convert for display
 
 [alarms]
-pit_drift_c = 15            # alarm when pit is this far from the Billows set temp...
-pit_drift_minutes = 5       # ...for this long
-stale_data_minutes = 5      # alarm when no new reading for this long
-probe_battery_low_pct = 15
+# Optional. Any alarm that's on wakes you. Leave a setting out to use its default.
+pit_high = true               # pit over its high limit
+pit_low = true                # pit under its low limit (fire going out)
+probe_high = true             # meat reached its target
+probe_low = false             # meat under its low limit (rarely useful)
+gateway_timeout = true        # no data from the Gateway...
+gateway_timeout_minutes = 5   # ...for this many minutes
+probe_timeout = true          # a probe in use has gone quiet...
+probe_timeout_minutes = 5     # ...for this many minutes
+gateway_battery_pct = 10      # alarm below this; 0 switches it off
+probe_battery_pct = 10        # alarm below this; 0 switches it off
 
 [notifiers.sound]
 enabled = true
