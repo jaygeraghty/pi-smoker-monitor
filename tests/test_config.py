@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from smoker_monitor.config import ConfigError, load_config
+from smoker_monitor.config import AlarmRules, ConfigError, load_config
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -140,3 +140,82 @@ def test_example_config_includes_traeger() -> None:
     """Keeps the Traeger section in config.example.toml in sync with load_config."""
     config = load_config(REPO_ROOT / "config.example.toml")
     assert config.traeger_mqtt is not None
+
+
+# ------------------------------------------------------------------ alarms ---
+
+
+def test_no_alarms_section_uses_safe_defaults(tmp_path: Path) -> None:
+    """Fail-safe: a config without [alarms] still has every important alarm on."""
+    rules = load_config(write_config(tmp_path, VALID)).alarms
+    assert rules == AlarmRules()
+    assert rules.pit_high and rules.pit_low and rules.probe_high
+    assert rules.gateway_timeout and rules.probe_timeout
+    assert rules.probe_low is False
+
+
+def test_alarms_section_is_read(tmp_path: Path) -> None:
+    text = (
+        VALID
+        + """
+[alarms]
+pit_low = false
+probe_low = true
+gateway_timeout_minutes = 10
+probe_battery_pct = 0
+"""
+    )
+    rules = load_config(write_config(tmp_path, text)).alarms
+    assert rules.pit_low is False
+    assert rules.probe_low is True
+    assert rules.gateway_timeout_minutes == 10
+    assert rules.probe_battery_pct == 0  # 0 switches the battery alarm off
+
+
+def test_settings_left_out_keep_their_defaults(tmp_path: Path) -> None:
+    text = VALID + "\n[alarms]\npit_low = false\n"
+    rules = load_config(write_config(tmp_path, text)).alarms
+    assert rules.pit_low is False
+    assert rules.pit_high is True
+    assert rules.probe_timeout_minutes == AlarmRules().probe_timeout_minutes
+
+
+def test_unknown_alarm_setting_is_an_error(tmp_path: Path) -> None:
+    """A typo must not silently leave an alarm in the wrong state."""
+    text = VALID + "\n[alarms]\npit_hihg = false\n"
+    with pytest.raises(ConfigError, match="pit_hihg"):
+        load_config(write_config(tmp_path, text))
+
+
+@pytest.mark.parametrize("bad", ['"yes"', "1", '"true"'])
+def test_alarm_switch_must_be_true_or_false(tmp_path: Path, bad: str) -> None:
+    text = VALID + f"\n[alarms]\npit_high = {bad}\n"
+    with pytest.raises(ConfigError, match="true or false"):
+        load_config(write_config(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    ("key", "bad"),
+    [
+        ("gateway_timeout_minutes", "0"),
+        ("probe_timeout_minutes", "-1"),
+        ("gateway_battery_pct", "101"),
+        ("probe_battery_pct", "-5"),
+    ],
+)
+def test_alarm_numbers_must_be_in_range(tmp_path: Path, key: str, bad: str) -> None:
+    text = VALID + f"\n[alarms]\n{key} = {bad}\n"
+    with pytest.raises(ConfigError, match="between"):
+        load_config(write_config(tmp_path, text))
+
+
+def test_alarm_numbers_must_be_whole(tmp_path: Path) -> None:
+    text = VALID + "\n[alarms]\nprobe_timeout_minutes = 2.5\n"
+    with pytest.raises(ConfigError, match="whole number"):
+        load_config(write_config(tmp_path, text))
+
+
+def test_example_config_alarms_are_valid() -> None:
+    """Keeps the [alarms] section in config.example.toml in sync with load_config."""
+    rules = load_config(REPO_ROOT / "config.example.toml").alarms
+    assert rules == AlarmRules()
