@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from smoker_monitor.config import AlarmRules, ConfigError, load_config
+from smoker_monitor.config import ConfigError, load_config
+from smoker_monitor.domain.alarms import AlarmRules
 
 REPO_ROOT = Path(__file__).parent.parent
 

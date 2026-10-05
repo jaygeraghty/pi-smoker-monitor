@@ -15,6 +15,8 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from smoker_monitor.domain.alarms import AlarmRules
+
 
 class ConfigError(Exception):
     """Raised when config.toml is missing or invalid."""
@@ -45,27 +47,6 @@ class PollingSettings:
     """How often to fetch new readings."""
 
     interval_seconds: int
-
-
-@dataclass(frozen=True)
-class AlarmRules:
-    """Which alarms are switched on, and their thresholds.
-
-    Any alarm that is switched on wakes you. The defaults are deliberately
-    cautious: everything on except "probe too cold", so a config file without
-    an [alarms] section still protects you.
-    """
-
-    pit_high: bool = True  # pit over its high limit
-    pit_low: bool = True  # pit under its low limit (fire going out)
-    probe_high: bool = True  # meat reached its target
-    probe_low: bool = False  # meat under its low limit (rarely useful)
-    gateway_timeout: bool = True  # no data from the Gateway...
-    gateway_timeout_minutes: int = 5  # ...for this many minutes
-    probe_timeout: bool = True  # a probe in use has gone quiet...
-    probe_timeout_minutes: int = 5  # ...for this many minutes
-    gateway_battery_pct: int = 10  # alarm below this; 0 switches it off
-    probe_battery_pct: int = 10  # alarm below this; 0 switches it off
 
 
 @dataclass(frozen=True)
