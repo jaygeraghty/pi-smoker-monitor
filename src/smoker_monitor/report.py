@@ -12,12 +12,24 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import assert_never
 
-from smoker_monitor.domain.alarms import Alarm, AlarmKind
+from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules, is_fresh
 from smoker_monitor.domain.models import AlarmSettings, Gateway, Probe, Snapshot
 
 
-def format_snapshot(snapshot: Snapshot, now: datetime, alarms: Sequence[Alarm] = ()) -> str:
-    """Return a multi-line, human-readable summary: any alarms first, then each device."""
+def format_snapshot(
+    snapshot: Snapshot,
+    now: datetime,
+    alarms: Sequence[Alarm] = (),
+    rules: AlarmRules | None = None,
+) -> str:
+    """Return a multi-line, human-readable summary: any alarms first, then each device.
+
+    `rules` supplies the timeouts that decide whether a device's data is recent;
+    a device past its timeout has its ETI "ALARMING" flags shown as old news.
+    """
+    rules = rules or AlarmRules()
+    gateway_limit = timedelta(minutes=rules.gateway_timeout_minutes)
+    probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     lines: list[str] = []
 
     if alarms:
@@ -27,11 +39,12 @@ def format_snapshot(snapshot: Snapshot, now: datetime, alarms: Sequence[Alarm] =
     if snapshot.gateway is None:
         lines.append("No RFX Gateway found on this ETI Cloud account.")
     else:
-        lines.extend(format_gateway(snapshot.gateway, now))
+        fresh = is_fresh(snapshot.gateway.last_seen, now, gateway_limit)
+        lines.extend(format_gateway(snapshot.gateway, now, fresh))
 
     for probe in snapshot.probes:
         lines.append("")
-        lines.extend(format_probe(probe, now))
+        lines.extend(format_probe(probe, now, is_fresh(probe.last_seen, now, probe_limit)))
 
     return "\n".join(lines)
 
@@ -77,7 +90,7 @@ def device_name(serial: str, snapshot: Snapshot) -> str:
     return serial
 
 
-def format_gateway(gateway: Gateway, now: datetime) -> list[str]:
+def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[str]:
     """Lines describing the Gateway, its pit probe and the Billows fan."""
     lines = [
         f"{gateway.label or 'Gateway'} ({gateway.serial})",
@@ -90,7 +103,7 @@ def format_gateway(gateway: Gateway, now: datetime) -> list[str]:
         lines.append("  Pit:   no reading (is the air probe plugged in?)")
     else:
         lines.append(f"  Pit:   {format_temp(gateway.pit.celsius)}")
-    lines.append(f"  Alarm: {format_alarms(gateway.pit_alarms)}")
+    lines.append(f"  Alarm: {format_alarms(gateway.pit_alarms, fresh)}")
 
     fan = gateway.fan
 
@@ -107,7 +120,7 @@ def format_gateway(gateway: Gateway, now: datetime) -> list[str]:
     return lines
 
 
-def format_probe(probe: Probe, now: datetime) -> list[str]:
+def format_probe(probe: Probe, now: datetime, fresh: bool = True) -> list[str]:
     """Lines describing one meat probe."""
     sensors = " / ".join(format_temp(s.celsius) for s in probe.sensors) or "none"
     return [
@@ -116,7 +129,7 @@ def format_probe(probe: Probe, now: datetime) -> list[str]:
         f"last seen {format_age(now - probe.last_seen)}",
         f"  Core:    {format_temp(probe.core_celsius())}",
         f"  Sensors: {sensors}",
-        f"  Alarms:  {format_alarms(probe.alarms)}",
+        f"  Alarms:  {format_alarms(probe.alarms, fresh)}",
     ]
 
 
@@ -128,26 +141,36 @@ def format_temp(celsius: float | None) -> str:
     return "--" if celsius is None else f"{celsius:.1f}°C"
 
 
-def format_alarms(alarms: AlarmSettings) -> str:
+def format_alarms(alarms: AlarmSettings, fresh: bool = True) -> str:
     """e.g. 'high 170.0°C, low 30.0°C', or 'off' when none are switched on.
 
     Only alarms switched on in the ETI app are shown. One that is going off
-    right now is marked ALARMING.
+    right now is marked ALARMING. If the device's data isn't recent, ETI's
+    flags are frozen at whatever it last heard, so ALARMING is dropped and the
+    line says "(no recent data)" instead.
     """
     parts = []
     for name, limit in (("high", alarms.high), ("low", alarms.low)):
         if limit is None or not limit.enabled:
             continue
         text = f"{name} {format_temp(limit.celsius)}"
-        if limit.alarming:
+        if limit.alarming and fresh:
             text += " ALARMING"
         parts.append(text)
-    return ", ".join(parts) or "off"
+    if not parts:
+        return "off"
+    line = ", ".join(parts)
+    return line if fresh else f"{line} (no recent data)"
 
 
 def format_minutes(value: float | None) -> str:
-    """e.g. 12 min (whole minutes, rounded down), or ? when unknown."""
-    return "?" if value is None else f"{int(value)} min"
+    """e.g. '12 min', '5 h 33 min' or '2 h' (rounded down), or ? when unknown."""
+    if value is None:
+        return "?"
+    hours, minutes = divmod(int(value), 60)
+    if hours == 0:
+        return f"{minutes} min"
+    return f"{hours} h" if minutes == 0 else f"{hours} h {minutes} min"
 
 
 def format_percent(value: float | None) -> str:
