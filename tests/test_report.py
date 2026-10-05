@@ -185,6 +185,10 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
         ),
         (Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10), "Gateway battery low: 8% (below 10%)"),
         (Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10), "RFX MEAT (P1) battery low: 5% (below 10%)"),
+        (
+            Alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, 6.0, 5.0),
+            "Can't reach ETI Cloud for 6 min (limit 5 min): readings are out of date",
+        ),
     ],
 )
 def test_describe_alarm(alarm: Alarm, words: str) -> None:

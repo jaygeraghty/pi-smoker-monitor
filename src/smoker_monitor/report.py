@@ -78,6 +78,11 @@ def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
             return f"Gateway battery low: {format_percent(value)} (below {format_percent(limit)})"
         case AlarmKind.PROBE_BATTERY:
             return f"{name} battery low: {format_percent(value)} (below {format_percent(limit)})"
+        case AlarmKind.ETI_UNREACHABLE:
+            return (
+                f"Can't reach ETI Cloud for {format_minutes(value)} "
+                f"(limit {format_minutes(limit)}): readings are out of date"
+            )
         case _:
             assert_never(alarm.kind)
 

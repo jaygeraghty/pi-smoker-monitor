@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -164,3 +165,51 @@ def test_snapshot_never_prints_password(
     captured = capsys.readouterr()
     assert "s3cret-pw" not in captured.out
     assert "s3cret-pw" not in captured.err
+
+
+# ---------------------------------------------------------- run / silence ---
+
+
+class InterruptedMonitor:
+    """Stands in for Monitor: remembers how it was built, then 'Ctrl+C' at once."""
+
+    built: ClassVar[dict[str, object]] = {}
+
+    def __init__(self, **kwargs: object) -> None:
+        InterruptedMonitor.built = kwargs
+
+    def run_forever(self, interval_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+
+def test_silence_leaves_a_request_for_the_monitor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    state_dir = tmp_path / "state"
+    assert main(["silence", "--state-dir", str(state_dir)]) == 0
+    assert (state_dir / "silence").exists()
+    assert "Silence requested" in capsys.readouterr().out
+
+
+def test_run_stops_cleanly_on_ctrl_c(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    monkeypatch.setattr(cli, "Monitor", InterruptedMonitor)
+    state_dir = tmp_path / "state"
+    code = main(["run", "--config", str(write_config(tmp_path)), "--state-dir", str(state_dir)])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Monitoring every 30 s" in out
+    assert "Stopped." in out
+    assert InterruptedMonitor.built["state_dir"] == state_dir
+
+
+def test_run_missing_config_fails_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["run", "--config", str(tmp_path / "nope.toml")])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "Traceback" not in captured.err

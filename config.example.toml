@@ -35,6 +35,8 @@ probe_timeout = true          # a probe in use has gone quiet...
 probe_timeout_minutes = 5     # ...for this many minutes
 gateway_battery_pct = 10      # alarm below this; 0 switches it off
 probe_battery_pct = 10        # alarm below this; 0 switches it off
+eti_unreachable = true        # the Pi can't get data from ETI Cloud...
+eti_unreachable_minutes = 5   # ...for this many minutes
 
 [notifiers.sound]
 enabled = true

@@ -164,6 +164,7 @@ pit_low = false
 probe_low = true
 gateway_timeout_minutes = 10
 probe_battery_pct = 0
+eti_unreachable_minutes = 15
 """
     )
     rules = load_config(write_config(tmp_path, text)).alarms
@@ -171,6 +172,7 @@ probe_battery_pct = 0
     assert rules.probe_low is True
     assert rules.gateway_timeout_minutes == 10
     assert rules.probe_battery_pct == 0  # 0 switches the battery alarm off
+    assert rules.eti_unreachable_minutes == 15
 
 
 def test_settings_left_out_keep_their_defaults(tmp_path: Path) -> None:
@@ -202,6 +204,7 @@ def test_alarm_switch_must_be_true_or_false(tmp_path: Path, bad: str) -> None:
         ("probe_timeout_minutes", "-1"),
         ("gateway_battery_pct", "101"),
         ("probe_battery_pct", "-5"),
+        ("eti_unreachable_minutes", "0"),
     ],
 )
 def test_alarm_numbers_must_be_in_range(tmp_path: Path, key: str, bad: str) -> None:

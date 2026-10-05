@@ -32,11 +32,11 @@ package; nothing imports `cli`.
 | `domain` | Snapshot, Probe, Pit, Fan, Reading; unit conversion; staleness | 1 |
 | `config` | Load and validate `config.toml` into typed settings | 1 |
 | `sources` | `Source` protocol; ETI Cloud adapter; fake/replay source | 1 |
-| `cli` | `smoker snapshot`, later `smoker run` | 1, 3 |
-| `alarms` | Rules + per-alarm state machine with hysteresis | 2 |
+| `cli` | `smoker snapshot`, `smoker run`, `smoker silence` | 1, 3 |
+| `domain.alarms`, `domain.alarm_state` | Alarm rules, and alarm memory (confirm, clear, silence) | 2 |
 | `notifiers` | Sound, Pushover, console behind one protocol | 3 |
 | `hardware` | Acknowledge button + LED (gpiozero), with a fake | 3 |
-| `service` | Async poll → evaluate → notify loop; retries; shutdown | 3 |
+| `service` | Poll → evaluate → notify loop; writes `state/status.json` for screens | 3 |
 | `ui` | Touchscreen display | 4 |
 
 ## Data from ETI Cloud (observed, October 2026)

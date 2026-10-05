@@ -24,6 +24,10 @@ Timeouts:
   A probe that was never live, e.g. left in a drawer, is ignored.
 
 Batteries: alarm below the [alarms] percentage; 0 switches it off.
+
+Can't reach ETI Cloud: when fetching fails, the Pi can't tell a silent Gateway
+from a silent internet, so `while_unreachable` swaps the timeout alarms for a
+single "can't reach ETI Cloud" alarm once it has failed for long enough.
 """
 
 from __future__ import annotations
@@ -58,6 +62,8 @@ class AlarmRules:
     probe_timeout_minutes: int = 5  # ...for this many minutes
     gateway_battery_pct: int = 10  # alarm below this; 0 switches it off
     probe_battery_pct: int = 10  # alarm below this; 0 switches it off
+    eti_unreachable: bool = True  # the Pi can't get data from ETI Cloud...
+    eti_unreachable_minutes: int = 5  # ...for this many minutes
 
 
 class AlarmKind(StrEnum):
@@ -71,6 +77,12 @@ class AlarmKind(StrEnum):
     PROBE_TIMEOUT = "probe_timeout"
     GATEWAY_BATTERY = "gateway_battery"  # set by gateway_battery_pct
     PROBE_BATTERY = "probe_battery"  # set by probe_battery_pct
+    ETI_UNREACHABLE = "eti_unreachable"  # the Pi can't fetch from ETI Cloud
+
+
+# Alarms that judge "has this device gone quiet?". They can't be judged while
+# ETI Cloud itself can't be reached.
+TIMEOUT_KINDS = frozenset({AlarmKind.GATEWAY_TIMEOUT, AlarmKind.PROBE_TIMEOUT})
 
 
 @dataclass(frozen=True)
@@ -185,6 +197,24 @@ def fresh_probes(snapshot: Snapshot, now: datetime, rules: AlarmRules) -> frozen
     """
     limit = timedelta(minutes=rules.probe_timeout_minutes)
     return frozenset(p.serial for p in snapshot.probes if is_fresh(p.last_seen, now, limit))
+
+
+def while_unreachable(
+    alarms: tuple[Alarm, ...], failing_since: datetime, now: datetime, rules: AlarmRules
+) -> tuple[Alarm, ...]:
+    """The alarms to use while fetching from ETI Cloud keeps failing.
+
+    `alarms` were evaluated on the last good data. Its timeout alarms are
+    dropped (we can't see the devices, so we don't know if they are quiet) and,
+    once fetching has failed for eti_unreachable_minutes, a "can't reach ETI
+    Cloud" alarm is added. `failing_since` is the time of the first failed
+    fetch in a row.
+    """
+    kept = tuple(alarm for alarm in alarms if alarm.kind not in TIMEOUT_KINDS)
+    limit = timedelta(minutes=rules.eti_unreachable_minutes)
+    if not rules.eti_unreachable or is_fresh(failing_since, now, limit):
+        return kept
+    return (*kept, timeout_alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, failing_since, now, limit))
 
 
 # ---------------------------------------------------------------- checks ---

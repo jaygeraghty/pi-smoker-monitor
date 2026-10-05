@@ -137,6 +137,10 @@ def load_alarm_rules(data: dict[str, Any]) -> AlarmRules:
         probe_battery_pct=_alarm_int(
             table, "probe_battery_pct", defaults.probe_battery_pct, 0, 100
         ),
+        eti_unreachable=_alarm_bool(table, "eti_unreachable", defaults.eti_unreachable),
+        eti_unreachable_minutes=_alarm_int(
+            table, "eti_unreachable_minutes", defaults.eti_unreachable_minutes, 1, 1440
+        ),
     )
 
 
