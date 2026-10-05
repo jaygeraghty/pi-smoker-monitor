@@ -48,12 +48,18 @@ class FakeSource:
     That capture is weeks old, so it always raises a "Gateway silent" alarm.
     """
 
+    closed = False
+
     def __init__(self, settings: EtiCloudSettings) -> None:
         self.settings = settings
+        FakeSource.closed = False
 
     async def fetch(self) -> Snapshot:
         raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
         return to_snapshot(raw, datetime.now(UTC))
+
+    async def close(self) -> None:
+        FakeSource.closed = True
 
 
 class FreshSource(FakeSource):
@@ -213,3 +219,19 @@ def test_run_missing_config_fails_cleanly(
     captured = capsys.readouterr()
     assert code == 1
     assert "Traceback" not in captured.err
+
+
+def test_snapshot_closes_the_connection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    main(["snapshot", "--config", str(write_config(tmp_path))])
+    assert FakeSource.closed
+
+
+def test_snapshot_closes_the_connection_after_a_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "EtiCloudSource", FailingSource)
+    main(["snapshot", "--config", str(write_config(tmp_path))])
+    assert FakeSource.closed

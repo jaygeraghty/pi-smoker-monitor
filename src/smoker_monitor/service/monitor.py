@@ -84,13 +84,17 @@ class Monitor:
         """Poll, then wait (watching for silence), forever. Stop with Ctrl+C."""
         # A silence request left over from before we started is stale.
         self._take_silence_request()
-        while True:
-            try:
-                await self.poll_once()
-            except Exception:
-                # A bug must not kill the monitor: log it and keep polling.
-                log.exception("Poll failed unexpectedly; carrying on")
-            await self.wait_for_next_poll(interval_seconds)
+        try:
+            while True:
+                try:
+                    await self.poll_once()
+                except Exception:
+                    # A bug must not kill the monitor: log it and keep polling.
+                    log.exception("Poll failed unexpectedly; carrying on")
+                await self.wait_for_next_poll(interval_seconds)
+        finally:
+            # Ctrl+C or a stop: close the connection to ETI Cloud cleanly.
+            await self.source.close()
 
     async def poll_once(self) -> AlarmState:
         """Do one full poll and return the new alarm state."""

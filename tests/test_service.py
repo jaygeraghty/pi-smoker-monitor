@@ -56,12 +56,16 @@ class ScriptedSource:
 
     def __init__(self, *results: Snapshot | Exception) -> None:
         self.results = list(results)
+        self.closed = False
 
     async def fetch(self) -> Snapshot:
         result = self.results.pop(0)
         if isinstance(result, Exception):
             raise result
         return result
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class RecordingNotifier:
@@ -352,6 +356,19 @@ async def test_run_forever_ignores_silence_request_from_before_it_started(
         await monitor.run_forever(30)
 
     assert not (tmp_path / SILENCE_FILE).exists()
+
+
+async def test_run_forever_closes_the_source_when_stopped(tmp_path: Path) -> None:
+    async def stop(seconds: float) -> None:
+        raise StopLoop
+
+    source = ScriptedSource(snapshot(START))
+    monitor, _, _ = make_monitor(tmp_path)
+    monitor.source = source
+    monitor.sleep = stop
+    with pytest.raises(StopLoop):
+        await monitor.run_forever(30)
+    assert source.closed
 
 
 # ---------------------------------------------------------------- summary ---
