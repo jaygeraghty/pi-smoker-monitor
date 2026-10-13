@@ -23,8 +23,12 @@ What the raw data looks like in practice (from a real capture):
   The Gateway has no channel 0.
 - Temperatures are in °F. Some values are numbers (96.1), some text ("154").
 - A channel with status "NO PROBE" has nothing plugged in; its value is stale.
-- fan.set_temp has no units of its own; we assume °F like everything else.
-  It read 570 with Billows disconnected, so this is unconfirmed until a live cook.
+- fan.set_temp has no units of its own, but is °F like everything else: in a
+  live test, 570 showed in the app as 298.9 °C, and 77 as 25 °C.
+- fan.state is what the Billows is doing: 1 = blowing, 2 = pulsing (as named
+  in the app). Other codes haven't been seen yet, so they map to UNKNOWN.
+- The app sets the pit alarms 25 °F above and below the set temperature, so
+  ETI's own pit alarms already cover "pit drifted from target".
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ from smoker_monitor.domain.models import (
     AlarmLimit,
     AlarmSettings,
     Fan,
+    FanActivity,
     Gateway,
     Probe,
     Reading,
@@ -65,6 +70,9 @@ LONG_AGO = datetime(1970, 1, 1, tzinfo=UTC)
 # ETI numbers sensor channels from 1. A probe has 4 sensors and the Gateway has
 # 1, so we stop at the first missing channel; this is just a safety limit.
 MAX_CHANNELS = 10
+
+# ETI's fan.state codes, as named in the app. Anything else is UNKNOWN.
+ETI_FAN_ACTIVITY = {1: FanActivity.BLOWING, 2: FanActivity.PULSING}
 
 # A meat probe's channel 0 is the whole probe (the app's big PROBE number). It is
 # where the app saves the probe's alarms.
@@ -280,11 +288,13 @@ def to_fan(fan: dict[str, Any] | None) -> Fan | None:
         return None
     state = to_int(fan.get("state"))
     return Fan(
-        # The fan block has no units of its own; assume °F like the rest.
+        # The fan block has no units of its own, but is °F (confirmed live).
         set_temp_celsius=to_celsius(fan.get("set_temp"), "F"),
-        # An unknown state is treated as 0 (off).
-        state=state if state is not None else 0,
+        state=state,
         connected=fan.get("connected") is True,
+        activity=ETI_FAN_ACTIVITY.get(state, FanActivity.UNKNOWN)
+        if state is not None
+        else FanActivity.UNKNOWN,
     )
 
 

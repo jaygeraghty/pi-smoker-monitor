@@ -63,7 +63,12 @@ def gateway_status(gateway: Gateway | None) -> dict[str, Any] | None:
         "pit_c": gateway.get_pit_temp(),
         "fan": None
         if fan is None
-        else {"connected": fan.connected, "set_c": fan.set_temp_celsius, "state": fan.state},
+        else {
+            "connected": fan.connected,
+            "set_c": fan.set_temp_celsius,
+            "activity": fan.activity.value,  # blowing, pulsing or unknown
+            "state": fan.state,  # the raw code, for showing an unknown one
+        },
     }
 
 

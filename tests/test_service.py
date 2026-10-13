@@ -9,6 +9,7 @@ poll by poll, in a fraction of a second.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -379,7 +380,34 @@ async def test_summary_line(tmp_path: Path) -> None:
         tmp_path, snapshot(START, pit=110.0, probes=(probe(START, core=68.2),))
     )
     await monitor.poll_once()
-    line = summary(monitor.snapshot or snapshot(START), monitor.state, "down")
-    assert (
-        line == "pit 110.0°C | P1 68.2°C | 0 ringing, 0 silenced | ETI unreachable, using last data"
+    line = summary(monitor.snapshot or snapshot(START), monitor.state, "down", START, AlarmRules())
+    assert line == (
+        "pit 110.0°C | P1 68.2°C | 0 ringing, 0 silenced | ETI unreachable, using last data"
     )
+
+
+def test_summary_shows_stale_probe_instead_of_old_temperature() -> None:
+    """A probe last seen at lunchtime mustn't look like a live 22.9°C at night."""
+    old = START - timedelta(hours=9)
+    line = summary(
+        snapshot(START, probes=(probe(old, core=22.9),)), AlarmState(), None, START, AlarmRules()
+    )
+    assert line == "pit 110.0°C | P1 stale | 0 ringing, 0 silenced"
+
+
+def test_summary_shows_stale_gateway() -> None:
+    old = START - timedelta(minutes=6)
+    line = summary(snapshot(old), AlarmState(), None, START, AlarmRules())
+    assert line == "pit stale | 0 ringing, 0 silenced"
+
+
+def test_summary_without_readings() -> None:
+    fresh = snapshot(START, probes=(probe(START),))
+    assert fresh.gateway is not None
+    no_pit = Snapshot(
+        taken_at=START,
+        gateway=replace(fresh.gateway, pit=None),
+        probes=(replace(fresh.probes[0], sensors=()),),
+    )
+    line = summary(no_pit, AlarmState(), None, START, AlarmRules())
+    assert line == "pit -- | P1 -- | 0 ringing, 0 silenced"

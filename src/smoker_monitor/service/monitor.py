@@ -26,11 +26,17 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from smoker_monitor.domain.alarm_state import AlarmState, silence_all, step
-from smoker_monitor.domain.alarms import AlarmRules, evaluate, fresh_probes, while_unreachable
+from smoker_monitor.domain.alarms import (
+    AlarmRules,
+    evaluate,
+    fresh_probes,
+    is_fresh,
+    while_unreachable,
+)
 from smoker_monitor.domain.models import Snapshot
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
@@ -108,7 +114,7 @@ class Monitor:
         self.state = step(self.state, alarms, now)
 
         self._publish(snapshot, now)
-        log.info("%s", summary(snapshot, self.state, self.fetch_error))
+        log.info("%s", summary(snapshot, self.state, self.fetch_error, now, self.rules))
         return self.state
 
     async def wait_for_next_poll(self, interval_seconds: float) -> None:
@@ -166,16 +172,38 @@ class Monitor:
         return True
 
 
-def summary(snapshot: Snapshot, state: AlarmState, fetch_error: str | None) -> str:
-    """A one-line log entry, e.g. 'pit 110.0°C | P1 68.2°C | 1 ringing'."""
+def summary(
+    snapshot: Snapshot,
+    state: AlarmState,
+    fetch_error: str | None,
+    now: datetime,
+    rules: AlarmRules,
+) -> str:
+    """A one-line log entry, e.g. 'pit 110.0°C | P1 68.2°C | 1 ringing, 0 silenced'.
+
+    A device that hasn't reported within its timeout shows as 'stale' rather
+    than an old temperature that looks current.
+    """
+    gateway_limit = timedelta(minutes=rules.gateway_timeout_minutes)
+    probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     parts = []
-    if snapshot.gateway is not None:
-        pit = snapshot.gateway.get_pit_temp()
-        parts.append("pit --" if pit is None else f"pit {pit:.1f}°C")
+    gateway = snapshot.gateway
+    if gateway is not None:
+        if not is_fresh(gateway.last_seen, now, gateway_limit):
+            parts.append("pit stale")
+        else:
+            parts.append(f"pit {format_reading(gateway.get_pit_temp())}")
     for probe in snapshot.probes:
-        core = probe.core_celsius()
-        parts.append(f"{probe.serial} " + ("--" if core is None else f"{core:.1f}°C"))
+        if not is_fresh(probe.last_seen, now, probe_limit):
+            parts.append(f"{probe.serial} stale")
+        else:
+            parts.append(f"{probe.serial} {format_reading(probe.core_celsius())}")
     parts.append(f"{len(state.ringing)} ringing, {len(state.silenced)} silenced")
     if fetch_error is not None:
         parts.append("ETI unreachable, using last data")
     return " | ".join(parts)
+
+
+def format_reading(celsius: float | None) -> str:
+    """A temperature for the log, e.g. '68.2°C', or '--' if there's no reading."""
+    return "--" if celsius is None else f"{celsius:.1f}°C"

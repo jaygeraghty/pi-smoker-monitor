@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from smoker_monitor.config import EtiCloudSettings, load_config
-from smoker_monitor.domain.models import NO_ALARMS, Gateway, Snapshot
+from smoker_monitor.domain.models import NO_ALARMS, FanActivity, Gateway, Snapshot
 from smoker_monitor.domain.units import f_to_c
 from smoker_monitor.sources import eti_cloud
 from smoker_monitor.sources.base import SourceError
@@ -28,6 +28,7 @@ from smoker_monitor.sources.eti_cloud import (
     parse_time,
     to_alarm_limit,
     to_celsius,
+    to_fan,
     to_snapshot,
 )
 
@@ -86,6 +87,32 @@ def test_disconnected_fan_is_mapped() -> None:
     assert gateway.fan.connected is False
     assert gateway.fan.set_temp_celsius == pytest.approx(f_to_c(570))
     assert gateway.pit_deviation() is None
+
+
+@pytest.mark.parametrize(
+    ("raw_state", "state", "activity"),
+    [
+        (1, 1, FanActivity.BLOWING),
+        (2, 2, FanActivity.PULSING),
+        ("2", 2, FanActivity.PULSING),  # ETI sends some numbers as text
+        (0, 0, FanActivity.UNKNOWN),  # not seen yet: kept, shown as UNKNOWN
+        (7, 7, FanActivity.UNKNOWN),
+        (None, None, FanActivity.UNKNOWN),
+        ("rubbish", None, FanActivity.UNKNOWN),
+    ],
+)
+def test_fan_state_codes(raw_state: Any, state: int | None, activity: FanActivity) -> None:
+    fan = to_fan({"connected": True, "set_temp": 225, "state": raw_state})
+    assert fan is not None
+    assert fan.state == state
+    assert fan.activity is activity
+
+
+def test_fan_without_state_is_unknown() -> None:
+    fan = to_fan({"connected": True, "set_temp": 225})
+    assert fan is not None
+    assert fan.state is None
+    assert fan.activity is FanActivity.UNKNOWN
 
 
 def test_probe_sensors_converted_to_celsius_in_order() -> None:
