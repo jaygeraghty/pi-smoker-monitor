@@ -56,11 +56,19 @@ def live_gateway(pit_celsius: float, fan: Fan | None) -> Gateway:
     )
 
 
-def test_idle_report_lists_every_device() -> None:
+def test_idle_report_lists_every_device_by_name() -> None:
+    """PROBE-1 is named by its white ring; PROBE-2 by its cook session, "brisket"."""
     report = idle_report()
-    assert "GATEWAY-1" in report
-    assert "PROBE-1" in report
-    assert "PROBE-2" in report
+    assert "RFX GATEWAY\n" in report
+    assert "White probe\n" in report
+    assert "brisket\n" in report
+    assert "Rings:   pink" in report
+
+
+def test_report_never_shows_serials() -> None:
+    report = idle_report()
+    for serial in ("GATEWAY-1", "PROBE-1", "PROBE-2"):
+        assert serial not in report
 
 
 def test_idle_report_explains_missing_pit_probe() -> None:
@@ -187,9 +195,9 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
         (Alarm(AlarmKind.PIT_LOW, "G1", 25.0, 30.0), "Pit too cold: 25.0°C (limit 30.0°C)"),
         (
             Alarm(AlarmKind.PROBE_HIGH, "P1", 95.2, 95.0),
-            "RFX MEAT (P1) reached target: 95.2°C (target 95.0°C)",
+            "RFX MEAT reached target: 95.2°C (target 95.0°C)",
         ),
-        (Alarm(AlarmKind.PROBE_LOW, "P1", 2.0, 4.0), "RFX MEAT (P1) too cold: 2.0°C (limit 4.0°C)"),
+        (Alarm(AlarmKind.PROBE_LOW, "P1", 2.0, 4.0), "RFX MEAT too cold: 2.0°C (limit 4.0°C)"),
         (
             Alarm(AlarmKind.GATEWAY_TIMEOUT, "G1", 12.7, 5.0),
             "Gateway silent for 12 min (limit 5 min)",
@@ -197,10 +205,10 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
         (Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0), "No RFX Gateway found"),
         (
             Alarm(AlarmKind.PROBE_TIMEOUT, "P1", 7.0, 5.0),
-            "RFX MEAT (P1) silent for 7 min (limit 5 min)",
+            "RFX MEAT silent for 7 min (limit 5 min)",
         ),
         (Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10), "Gateway battery low: 8% (below 10%)"),
-        (Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10), "RFX MEAT (P1) battery low: 5% (below 10%)"),
+        (Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10), "RFX MEAT battery low: 5% (below 10%)"),
         (
             Alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, 6.0, 5.0),
             "Can't reach ETI Cloud for 6 min (limit 5 min): readings are out of date",
@@ -219,12 +227,12 @@ def test_every_alarm_kind_has_wording() -> None:
 
 def test_unreadable_limit_is_shown_as_dashes() -> None:
     alarm = Alarm(AlarmKind.PROBE_HIGH, "P1", 96.0, None)
-    assert describe_alarm(alarm, WITH_PROBE) == "RFX MEAT (P1) reached target: 96.0°C (target --)"
+    assert describe_alarm(alarm, WITH_PROBE) == "RFX MEAT reached target: 96.0°C (target --)"
 
 
-def test_unknown_device_falls_back_to_serial() -> None:
+def test_unknown_device_never_shows_its_serial() -> None:
     alarm = Alarm(AlarmKind.PROBE_HIGH, "P9", 96.0, 95.0)
-    assert describe_alarm(alarm, WITH_PROBE).startswith("P9 reached target")
+    assert describe_alarm(alarm, WITH_PROBE).startswith("Unknown device reached target")
 
 
 def test_alarm_heading_counts_alarms() -> None:

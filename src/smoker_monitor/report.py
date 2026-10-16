@@ -21,6 +21,7 @@ from smoker_monitor.domain.models import (
     Probe,
     Snapshot,
 )
+from smoker_monitor.domain.names import device_names, gateway_name, probe_base_name, probe_names
 
 
 def format_snapshot(
@@ -49,9 +50,11 @@ def format_snapshot(
         fresh = is_fresh(snapshot.gateway.last_seen, now, gateway_limit)
         lines.extend(format_gateway(snapshot.gateway, now, fresh))
 
+    names = probe_names(snapshot.probes)
     for probe in snapshot.probes:
         lines.append("")
-        lines.extend(format_probe(probe, now, is_fresh(probe.last_seen, now, probe_limit)))
+        fresh = is_fresh(probe.last_seen, now, probe_limit)
+        lines.extend(format_probe(probe, now, fresh, names[probe.serial]))
 
     return "\n".join(lines)
 
@@ -64,7 +67,7 @@ def format_active_alarms(alarms: Sequence[Alarm], snapshot: Snapshot) -> list[st
 
 def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
     """One alarm in plain English. The Snapshot supplies the device's name."""
-    name = device_name(alarm.device, snapshot)
+    name = device_names(snapshot).get(alarm.device, "Unknown device")
     value, limit = alarm.value, alarm.limit
     match alarm.kind:
         case AlarmKind.PIT_HIGH:
@@ -94,14 +97,6 @@ def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
             assert_never(alarm.kind)
 
 
-def device_name(serial: str, snapshot: Snapshot) -> str:
-    """A probe's name as shown in the report, e.g. 'RFX MEAT (P1)'; else the serial."""
-    for probe in snapshot.probes:
-        if probe.serial == serial:
-            return f"{probe.label or 'Probe'} ({serial})"
-    return serial
-
-
 def format_fan_activity(fan: Fan) -> str:
     """What the fan is doing, e.g. 'blowing'. An unknown code is shown as-is."""
     if fan.activity is not FanActivity.UNKNOWN:
@@ -113,7 +108,7 @@ def format_fan_activity(fan: Fan) -> str:
 def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[str]:
     """Lines describing the Gateway, its pit probe and the Billows fan."""
     lines = [
-        f"{gateway.label or 'Gateway'} ({gateway.serial})",
+        gateway_name(gateway),
         f"  Battery {format_percent(gateway.battery_pct)}, "
         f"Wi-Fi {format_dbm(gateway.wifi_dbm)}, "
         f"last seen {format_age(now - gateway.last_seen)}",
@@ -143,17 +138,22 @@ def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[
     return lines
 
 
-def format_probe(probe: Probe, now: datetime, fresh: bool = True) -> list[str]:
-    """Lines describing one meat probe."""
+def format_probe(
+    probe: Probe, now: datetime, fresh: bool = True, name: str | None = None
+) -> list[str]:
+    """Lines describing one meat probe. `name` is its display name (see domain/names.py)."""
     sensors = " / ".join(format_temp(s.celsius) for s in probe.sensors) or "none"
-    return [
-        f"{probe.label or 'Probe'} ({probe.serial})",
+    lines = [
+        name or probe_base_name(probe),
         f"  Battery {format_percent(probe.battery_pct)}, "
         f"last seen {format_age(now - probe.last_seen)}",
         f"  Core:    {format_temp(probe.core_celsius())}",
         f"  Sensors: {sensors}",
         f"  Alarms:  {format_alarms(probe.alarms, fresh)}",
     ]
+    if probe.rings:
+        lines.append(f"  Rings:   {', '.join(ring.value for ring in probe.rings)}")
+    return lines
 
 
 # ------------------------------------------------------------------ helpers ---

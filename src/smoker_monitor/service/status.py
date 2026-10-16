@@ -20,6 +20,7 @@ from typing import Any
 
 from smoker_monitor.domain.alarm_state import AlarmState
 from smoker_monitor.domain.models import Gateway, Probe, Snapshot
+from smoker_monitor.domain.names import gateway_name, probe_names
 from smoker_monitor.report import describe_alarm
 
 STATUS_FILE = "status.json"
@@ -28,7 +29,12 @@ STATUS_FILE = "status.json"
 def build_status(
     snapshot: Snapshot, state: AlarmState, now: datetime, fetch_error: str | None
 ) -> dict[str, Any]:
-    """Everything a screen needs, as plain data ready for JSON."""
+    """Everything a screen needs, as plain data ready for JSON.
+
+    Each device carries its display name for screens to show. The serial is
+    kept only so alarms can be matched to devices; screens shouldn't show it.
+    """
+    names = probe_names(snapshot.probes)
     return {
         "updated_at": now.isoformat(),
         "sound_on": state.sound_on,
@@ -46,7 +52,7 @@ def build_status(
             for tracked in state.tracked.values()
         ],
         "gateway": gateway_status(snapshot.gateway),
-        "probes": [probe_status(probe) for probe in snapshot.probes],
+        "probes": [probe_status(probe, names[probe.serial]) for probe in snapshot.probes],
     }
 
 
@@ -56,6 +62,7 @@ def gateway_status(gateway: Gateway | None) -> dict[str, Any] | None:
     fan = gateway.fan
     return {
         "serial": gateway.serial,
+        "name": gateway_name(gateway),
         "label": gateway.label,
         "battery_pct": gateway.battery_pct,
         "wifi_dbm": gateway.wifi_dbm,
@@ -72,9 +79,11 @@ def gateway_status(gateway: Gateway | None) -> dict[str, Any] | None:
     }
 
 
-def probe_status(probe: Probe) -> dict[str, Any]:
+def probe_status(probe: Probe, name: str) -> dict[str, Any]:
     return {
         "serial": probe.serial,
+        "name": name,
+        "rings": [ring.value for ring in probe.rings],  # only the app's colours
         "label": probe.label,
         "battery_pct": probe.battery_pct,
         "last_seen": probe.last_seen.isoformat(),

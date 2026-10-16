@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules, evaluate
-from smoker_monitor.domain.models import FanActivity, Gateway, Snapshot
+from smoker_monitor.domain.models import FanActivity, Gateway, RingColour, Snapshot
 from smoker_monitor.sources.eti_cloud import to_snapshot
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -117,3 +117,15 @@ def test_blowing_capture_raises_only_pit_too_cold(blowing: Snapshot) -> None:
 
 def test_pulsing_capture_raises_nothing(pulsing: Snapshot) -> None:
     assert evaluate(pulsing, PULSING_AT, AlarmRules()) == ()
+
+
+# ----------------------------------------------------------------- names ---
+
+
+def test_probe_names_come_from_the_app(blowing: Snapshot) -> None:
+    """The app saved "white probe " (with a trailing space) and "pink probe"."""
+    assert [probe.name for probe in blowing.probes] == ["white probe", "pink probe"]
+    assert [probe.rings for probe in blowing.probes] == [
+        (RingColour.WHITE,),
+        (RingColour.PINK,),
+    ]

@@ -50,6 +50,7 @@ def test_gateway_and_probe_readings() -> None:
     status = build_status(SNAPSHOT, AlarmState(), NOW, None)
     assert status["gateway"] == {
         "serial": "G1",
+        "name": "RFX GATEWAY",
         "label": "RFX GATEWAY",
         "battery_pct": 80,
         "wifi_dbm": -55,
@@ -60,6 +61,8 @@ def test_gateway_and_probe_readings() -> None:
     assert status["probes"] == [
         {
             "serial": "P1",
+            "name": "PROBE-1",
+            "rings": [],
             "label": "PROBE-1",
             "battery_pct": 90,
             "last_seen": "2026-10-05T23:00:00+00:00",

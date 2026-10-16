@@ -17,18 +17,21 @@ from typing import Any
 import pytest
 
 from smoker_monitor.config import EtiCloudSettings, load_config
-from smoker_monitor.domain.models import NO_ALARMS, FanActivity, Gateway, Snapshot
+from smoker_monitor.domain.models import NO_ALARMS, FanActivity, Gateway, RingColour, Snapshot
 from smoker_monitor.domain.units import f_to_c
 from smoker_monitor.sources import eti_cloud
 from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.eti_cloud import (
     LONG_AGO,
+    MAX_NAME_LENGTH,
     EtiCloudSource,
+    clean_name,
     fetch_channels,
     parse_time,
     to_alarm_limit,
     to_celsius,
     to_fan,
+    to_rings,
     to_snapshot,
 )
 
@@ -113,6 +116,81 @@ def test_fan_without_state_is_unknown() -> None:
     assert fan is not None
     assert fan.state is None
     assert fan.activity is FanActivity.UNKNOWN
+
+
+# ------------------------------------------------------- names and rings ---
+
+
+def test_idle_capture_names_and_rings() -> None:
+    """PROBE-1 has no name but a white ring; PROBE-2 has a cook session "brisket"."""
+    first, second = idle_snapshot().probes
+    assert first.name is None
+    assert first.rings == (RingColour.WHITE,)
+    assert second.name == "brisket"
+    assert second.rings == (RingColour.PINK,)
+    assert idle_gateway().name is None  # its session label is blank
+
+
+@pytest.mark.parametrize(
+    ("raw", "clean"),
+    [
+        ("white probe ", "white probe"),  # trailing space, as the app saved it
+        ("  pink   probe ", "pink probe"),
+        ("ribs\n\tday\x00", "ribs day"),  # control characters removed
+        ("\u200bbrisket", "brisket"),  # invisible zero-width space removed
+        ("", None),
+        ("   ", None),
+        (None, None),
+        (42, None),
+        (["brisket"], None),
+        ({"name": "brisket"}, None),
+    ],
+)
+def test_clean_name(raw: Any, clean: str | None) -> None:
+    assert clean_name(raw) == clean
+
+
+def test_clean_name_is_cut_to_fit_the_screen() -> None:
+    long = clean_name("the biggest brisket you have ever seen")
+    assert long is not None
+    assert len(long) <= MAX_NAME_LENGTH
+    assert long == long.strip()
+
+
+def rings_block(*values: Any) -> dict[str, Any]:
+    return {"values": [{"stringValue": value} for value in values]}
+
+
+@pytest.mark.parametrize(
+    ("raw", "rings"),
+    [
+        (rings_block("white", "none", "none"), (RingColour.WHITE,)),
+        (
+            rings_block("pink", "blue", "charcoal"),
+            (RingColour.PINK, RingColour.BLUE, RingColour.CHARCOAL),
+        ),
+        (rings_block(" Yellow ", "GREEN"), (RingColour.YELLOW, RingColour.GREEN)),
+        (rings_block("none", "none", "none"), ()),
+        (rings_block("magenta", "<script>", "", "red"), ()),  # unknown text is dropped
+        (rings_block(1, None, True), ()),  # not text at all
+        (rings_block("red", "red", "red", "blue"), (RingColour.RED,) * 3),  # max 3 rings
+        ({"values": ["red", 7]}, ()),  # entries not in ETI's shape
+        ({"values": "red"}, ()),
+        ({}, ()),
+        ("red", ()),
+        (None, ()),
+    ],
+)
+def test_ring_colours_only_accept_the_apps_colours(raw: Any, rings: tuple[RingColour, ...]) -> None:
+    assert to_rings(raw) == rings
+
+
+def test_malformed_additional_properties_are_ignored() -> None:
+    raw = load_raw()
+    raw["devices"][1]["additional_properties"] = "rubbish"
+    probe = to_snapshot(raw, NOW).probes[0]
+    assert probe.name is None
+    assert probe.rings == ()
 
 
 def test_probe_sensors_converted_to_celsius_in_order() -> None:
