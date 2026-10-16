@@ -110,7 +110,8 @@ def gateway(seen: datetime, pit: float = 110.0) -> Gateway:
 def probe(seen: datetime, core: float = 60.0) -> Probe:
     return Probe(
         serial="P1",
-        label="PROBE-1",
+        label="RFX MEAT",
+        name="white probe",
         battery_pct=90,
         last_seen=seen,
         sensors=(Reading(core, seen), Reading(core + 5, seen)),
@@ -382,7 +383,8 @@ async def test_summary_line(tmp_path: Path) -> None:
     await monitor.poll_once()
     line = summary(monitor.snapshot or snapshot(START), monitor.state, "down", START, AlarmRules())
     assert line == (
-        "pit 110.0°C | P1 68.2°C | 0 ringing, 0 silenced | ETI unreachable, using last data"
+        "pit 110.0°C | white probe 68.2°C | 0 ringing, 0 silenced"
+        " | ETI unreachable, using last data"
     )
 
 
@@ -392,7 +394,7 @@ def test_summary_shows_stale_probe_instead_of_old_temperature() -> None:
     line = summary(
         snapshot(START, probes=(probe(old, core=22.9),)), AlarmState(), None, START, AlarmRules()
     )
-    assert line == "pit 110.0°C | P1 stale | 0 ringing, 0 silenced"
+    assert line == "pit 110.0°C | white probe stale | 0 ringing, 0 silenced"
 
 
 def test_summary_shows_stale_gateway() -> None:
@@ -410,4 +412,4 @@ def test_summary_without_readings() -> None:
         probes=(replace(fresh.probes[0], sensors=()),),
     )
     line = summary(no_pit, AlarmState(), None, START, AlarmRules())
-    assert line == "pit -- | P1 -- | 0 ringing, 0 silenced"
+    assert line == "pit -- | white probe -- | 0 ringing, 0 silenced"

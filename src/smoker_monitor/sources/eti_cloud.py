@@ -27,6 +27,11 @@ What the raw data looks like in practice (from a real capture):
   live test, 570 showed in the app as 298.9 °C, and 77 as 25 °C.
 - fan.state is what the Billows is doing: 1 = blowing, 2 = pulsing (as named
   in the app). Other codes haven't been seen yet, so they map to UNKNOWN.
+- Names: the name you give a probe is saved as channel 0's "label" (e.g.
+  "white probe ", trailing space and all). A cook session's name is
+  additional_properties.sessionLabel. The device "label" is just its type.
+- Ring colours: additional_properties.ringColors.values, one entry per ring,
+  e.g. {"stringValue": "pink"}, or "none" for an unused ring.
 - The app sets the pit alarms 25 °F above and below the set temperature, so
   ETI's own pit alarms already cover "pit drifted from target".
 """
@@ -35,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import unicodedata
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
@@ -52,6 +58,7 @@ from smoker_monitor.domain.models import (
     Gateway,
     Probe,
     Reading,
+    RingColour,
     Snapshot,
 )
 from smoker_monitor.domain.units import f_to_c
@@ -70,6 +77,13 @@ LONG_AGO = datetime(1970, 1, 1, tzinfo=UTC)
 # ETI numbers sensor channels from 1. A probe has 4 sensors and the Gateway has
 # 1, so we stop at the first missing channel; this is just a safety limit.
 MAX_CHANNELS = 10
+
+# Names typed into the app are cut to this length, so they fit on screen.
+MAX_NAME_LENGTH = 20
+
+# A probe has three rings, so at most three colours.
+MAX_RINGS = 3
+RING_COLOURS = {colour.value for colour in RingColour}
 
 # ETI's fan.state codes, as named in the app. Anything else is UNKNOWN.
 ETI_FAN_ACTIVITY = {1: FanActivity.BLOWING, 2: FanActivity.PULSING}
@@ -247,13 +261,14 @@ def to_gateway(device: dict[str, Any], channels: list[dict[str, Any]]) -> Gatewa
 
     return Gateway(
         serial=str(device.get("serial")),
-        label=device.get("label") or None,
+        label=clean_name(device.get("label")),
         battery_pct=to_int(device.get("battery")),
         wifi_dbm=to_int(device.get("wifi_strength")),
         last_seen=last_seen,
         pit=pit,
         fan=to_fan(device.get("fan")),
         pit_alarms=pit_alarms,
+        name=clean_name(extra(device).get("sessionLabel")),
     )
 
 
@@ -274,12 +289,56 @@ def to_probe(device: dict[str, Any], channels: list[dict[str, Any]]) -> Probe:
 
     return Probe(
         serial=str(device.get("serial")),
-        label=device.get("label") or None,
+        label=clean_name(device.get("label")),
         battery_pct=to_int(device.get("battery")),
         last_seen=last_seen,
         sensors=sensors,
         alarms=alarms,
+        # A cook session's label wins; otherwise the name you gave the probe,
+        # which the app saves on channel 0.
+        name=clean_name(extra(device).get("sessionLabel"))
+        or (clean_name(whole_probe[0].get("label")) if whole_probe else None),
+        rings=to_rings(extra(device).get("ringColors")),
     )
+
+
+def extra(raw: dict[str, Any]) -> dict[str, Any]:
+    """A device's "additional_properties" block, or {} if it's missing or malformed."""
+    found = raw.get("additional_properties")
+    return found if isinstance(found, dict) else {}
+
+
+def clean_name(value: Any) -> str | None:
+    """Tidy a name typed into the app, so it's safe to show anywhere.
+
+    Only text is accepted. Invisible control characters are removed, runs of
+    spaces become one, and it is cut to MAX_NAME_LENGTH characters. Returns
+    None if nothing is left.
+    """
+    if not isinstance(value, str):
+        return None
+    visible = "".join(" " if unicodedata.category(c).startswith("C") else c for c in value)
+    tidy = " ".join(visible.split())[:MAX_NAME_LENGTH].strip()
+    return tidy or None
+
+
+def to_rings(raw: Any) -> tuple[RingColour, ...]:
+    """A probe's ring colours, from ETI's ringColors block.
+
+    The block looks like {"values": [{"stringValue": "white"}, ...]}. Each
+    entry must be text matching one of the app's colours (any capitals or
+    spaces are ignored). "none", unknown colours, and anything malformed are
+    skipped, never passed through. At most MAX_RINGS are kept.
+    """
+    values = raw.get("values") if isinstance(raw, dict) else None
+    if not isinstance(values, list):
+        return ()
+    rings: list[RingColour] = []
+    for entry in values[:MAX_RINGS]:
+        text = entry.get("stringValue") if isinstance(entry, dict) else None
+        if isinstance(text, str) and text.strip().lower() in RING_COLOURS:
+            rings.append(RingColour(text.strip().lower()))
+    return tuple(rings)
 
 
 def to_fan(fan: dict[str, Any] | None) -> Fan | None:

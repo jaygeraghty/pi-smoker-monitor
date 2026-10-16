@@ -114,7 +114,8 @@ def test_snapshot_prints_readings(
     monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
     main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
-    assert "PROBE-1" in captured.out
+    assert "White probe" in captured.out
+    assert "PROBE-1" not in captured.out  # serials are never shown
     assert "°C" in captured.out
 
 

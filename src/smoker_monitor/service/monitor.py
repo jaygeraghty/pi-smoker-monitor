@@ -38,6 +38,7 @@ from smoker_monitor.domain.alarms import (
     while_unreachable,
 )
 from smoker_monitor.domain.models import Snapshot
+from smoker_monitor.domain.names import probe_names
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
@@ -179,13 +180,14 @@ def summary(
     now: datetime,
     rules: AlarmRules,
 ) -> str:
-    """A one-line log entry, e.g. 'pit 110.0°C | P1 68.2°C | 1 ringing, 0 silenced'.
+    """A one-line log entry, e.g. 'pit 110.0°C | white probe 68.2°C | 1 ringing, 0 silenced'.
 
     A device that hasn't reported within its timeout shows as 'stale' rather
     than an old temperature that looks current.
     """
     gateway_limit = timedelta(minutes=rules.gateway_timeout_minutes)
     probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
+    names = probe_names(snapshot.probes)
     parts = []
     gateway = snapshot.gateway
     if gateway is not None:
@@ -195,9 +197,9 @@ def summary(
             parts.append(f"pit {format_reading(gateway.get_pit_temp())}")
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
-            parts.append(f"{probe.serial} stale")
+            parts.append(f"{names[probe.serial]} stale")
         else:
-            parts.append(f"{probe.serial} {format_reading(probe.core_celsius())}")
+            parts.append(f"{names[probe.serial]} {format_reading(probe.core_celsius())}")
     parts.append(f"{len(state.ringing)} ringing, {len(state.silenced)} silenced")
     if fetch_error is not None:
         parts.append("ETI unreachable, using last data")

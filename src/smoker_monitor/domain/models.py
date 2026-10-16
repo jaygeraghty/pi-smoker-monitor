@@ -6,7 +6,8 @@ code, so they are easy to test.
 - AlarmLimit:    one high or low alarm limit on a channel.
 - AlarmSettings: a channel's high and low alarm limits together.
 - Reading:       one temperature and when it was taken.
-- Probe:         an RFX MEAT probe: its sensors, battery and alarm settings.
+- RingColour:    the colours a probe's rings can be (the app's own list).
+- Probe:         an RFX MEAT probe: sensors, battery, alarms, name and rings.
 - FanActivity:   what the fan is doing (blowing, pulsing or unknown).
 - Fan:           the Billows fan: connected or not, set temperature, activity.
 - Gateway:       the RFX Gateway: pit (air) probe, fan, Wi-Fi and alarm settings.
@@ -57,16 +58,36 @@ class Reading:
         return now - self.taken_at
 
 
+class RingColour(StrEnum):
+    """A coloured ring on a probe, used to tell probes apart.
+
+    These are the only colours the app offers. Sources must map whatever they
+    receive onto this list (or leave it out), so screens never see raw text.
+    """
+
+    BLUE = "blue"
+    CHARCOAL = "charcoal"
+    GREEN = "green"
+    ORANGE = "orange"
+    PINK = "pink"
+    PURPLE = "purple"
+    RED = "red"
+    WHITE = "white"
+    YELLOW = "yellow"
+
+
 @dataclass(frozen=True)
 class Probe:
     """A single temp probe, and the readings it gives"""
 
     serial: str
-    label: str | None
+    label: str | None  # the device type, e.g. "RFX MEAT"
     battery_pct: int | None
     last_seen: datetime
     sensors: tuple[Reading, ...]
     alarms: AlarmSettings = NO_ALARMS
+    name: str | None = None  # your name for it, e.g. "white probe" (already tidied)
+    rings: tuple[RingColour, ...] = ()  # its ring colours, top to bottom (up to 3)
 
     def core_celsius(self) -> float | None:
         """Lowest sensor temperature (the coldest point in the meat), or None if no readings."""
@@ -105,13 +126,14 @@ class Gateway:
     connect to, and passes the data to the server via wifi"""
 
     serial: str
-    label: str | None
+    label: str | None  # the device type, e.g. "RFX GATEWAY"
     battery_pct: int | None
     wifi_dbm: int | None
     last_seen: datetime
     pit: Reading | None
     fan: Fan | None
     pit_alarms: AlarmSettings = NO_ALARMS
+    name: str | None = None  # your name for it, if you've given one (already tidied)
 
     def get_pit_temp(self) -> float | None:
         """Get the temp of the pit probes readings"""
