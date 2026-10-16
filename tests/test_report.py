@@ -14,6 +14,7 @@ from smoker_monitor.domain.models import (
     AlarmLimit,
     AlarmSettings,
     Fan,
+    FanActivity,
     Gateway,
     Probe,
     Reading,
@@ -24,6 +25,7 @@ from smoker_monitor.report import (
     format_active_alarms,
     format_age,
     format_alarms,
+    format_fan_activity,
     format_minutes,
     format_snapshot,
     format_temp,
@@ -88,11 +90,25 @@ def test_no_alarms_means_no_alarm_block() -> None:
 
 
 def test_connected_fan_shows_set_temp_and_deviation() -> None:
-    fan = Fan(set_temp_celsius=107.0, state=1, connected=True)
+    fan = Fan(set_temp_celsius=107.0, state=1, connected=True, activity=FanActivity.BLOWING)
     snapshot = Snapshot(taken_at=NOW, gateway=live_gateway(110.0, fan), probes=())
     report = format_snapshot(snapshot, NOW)
-    assert "set to 107.0°C" in report
+    assert "Fan:   connected, set to 107.0°C, blowing" in report
     assert "+3.0°C from the set temperature" in report
+
+
+@pytest.mark.parametrize(
+    ("state", "activity", "words"),
+    [
+        (1, FanActivity.BLOWING, "blowing"),
+        (2, FanActivity.PULSING, "pulsing"),
+        (0, FanActivity.UNKNOWN, "state 0 (UNKNOWN)"),
+        (None, FanActivity.UNKNOWN, "state missing (UNKNOWN)"),
+    ],
+)
+def test_fan_activity_words(state: int | None, activity: FanActivity, words: str) -> None:
+    fan = Fan(set_temp_celsius=25.0, state=state, connected=True, activity=activity)
+    assert format_fan_activity(fan) == words
 
 
 def test_missing_gateway_is_explained() -> None:

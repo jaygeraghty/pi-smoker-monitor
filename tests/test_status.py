@@ -8,7 +8,7 @@ from pathlib import Path
 
 from smoker_monitor.domain.alarm_state import AlarmState, step
 from smoker_monitor.domain.alarms import Alarm, AlarmKind
-from smoker_monitor.domain.models import Fan, Gateway, Probe, Reading, Snapshot
+from smoker_monitor.domain.models import Fan, FanActivity, Gateway, Probe, Reading, Snapshot
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
 
 NOW = datetime(2026, 10, 5, 23, 0, tzinfo=UTC)
@@ -20,7 +20,7 @@ GATEWAY = Gateway(
     wifi_dbm=-55,
     last_seen=NOW,
     pit=Reading(110.0, NOW),
-    fan=Fan(set_temp_celsius=110.0, state=1, connected=True),
+    fan=Fan(set_temp_celsius=110.0, state=1, connected=True, activity=FanActivity.BLOWING),
 )
 PROBE = Probe(
     serial="P1",
@@ -55,7 +55,7 @@ def test_gateway_and_probe_readings() -> None:
         "wifi_dbm": -55,
         "last_seen": "2026-10-05T23:00:00+00:00",
         "pit_c": 110.0,
-        "fan": {"connected": True, "set_c": 110.0, "state": 1},
+        "fan": {"connected": True, "set_c": 110.0, "activity": "blowing", "state": 1},
     }
     assert status["probes"] == [
         {

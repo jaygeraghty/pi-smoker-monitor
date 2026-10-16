@@ -7,7 +7,8 @@ code, so they are easy to test.
 - AlarmSettings: a channel's high and low alarm limits together.
 - Reading:       one temperature and when it was taken.
 - Probe:         an RFX MEAT probe: its sensors, battery and alarm settings.
-- Fan:           the Billows fan: connected or not, and its set temperature.
+- FanActivity:   what the fan is doing (blowing, pulsing or unknown).
+- Fan:           the Billows fan: connected or not, set temperature, activity.
 - Gateway:       the RFX Gateway: pit (air) probe, fan, Wi-Fi and alarm settings.
 - Snapshot:      the Gateway and every probe, as seen at one poll.
 
@@ -19,6 +20,7 @@ Rules followed throughout:
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 
 @dataclass(frozen=True)
@@ -79,13 +81,22 @@ class Probe:
             return None
 
 
+class FanActivity(StrEnum):
+    """What the fan is doing. Sources translate their own codes into these."""
+
+    BLOWING = "blowing"  # running flat out to raise the pit temperature
+    PULSING = "pulsing"  # short bursts, near the set temperature
+    UNKNOWN = "unknown"  # a code we haven't seen yet; see Fan.state
+
+
 @dataclass(frozen=True)
 class Fan:
     """The fan is the object controlled by the gateway to manage pit temps"""
 
     set_temp_celsius: float | None
-    state: int
+    state: int | None  # the source's raw state code, kept for display (None if missing)
     connected: bool
+    activity: FanActivity = FanActivity.UNKNOWN
 
 
 @dataclass(frozen=True)

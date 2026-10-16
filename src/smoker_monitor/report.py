@@ -13,7 +13,14 @@ from datetime import datetime, timedelta
 from typing import assert_never
 
 from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules, is_fresh
-from smoker_monitor.domain.models import AlarmSettings, Gateway, Probe, Snapshot
+from smoker_monitor.domain.models import (
+    AlarmSettings,
+    Fan,
+    FanActivity,
+    Gateway,
+    Probe,
+    Snapshot,
+)
 
 
 def format_snapshot(
@@ -95,6 +102,14 @@ def device_name(serial: str, snapshot: Snapshot) -> str:
     return serial
 
 
+def format_fan_activity(fan: Fan) -> str:
+    """What the fan is doing, e.g. 'blowing'. An unknown code is shown as-is."""
+    if fan.activity is not FanActivity.UNKNOWN:
+        return fan.activity.value
+    code = "missing" if fan.state is None else str(fan.state)
+    return f"state {code} (UNKNOWN)"
+
+
 def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[str]:
     """Lines describing the Gateway, its pit probe and the Billows fan."""
     lines = [
@@ -117,7 +132,10 @@ def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[
     elif not fan.connected:
         lines.append("  Fan:   not connected")
     else:
-        lines.append(f"  Fan:   connected, set to {format_temp(fan.set_temp_celsius)}")
+        lines.append(
+            f"  Fan:   connected, set to {format_temp(fan.set_temp_celsius)}, "
+            f"{format_fan_activity(fan)}"
+        )
         deviation = gateway.pit_deviation()
         if deviation is not None:
             lines.append(f"  Pit is {deviation:+.1f}°C from the set temperature")
