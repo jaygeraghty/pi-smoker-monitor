@@ -54,7 +54,7 @@ def format_snapshot(
     for probe in snapshot.probes:
         lines.append("")
         fresh = is_fresh(probe.last_seen, now, probe_limit)
-        lines.extend(format_probe(probe, now, fresh, names[probe.serial]))
+        lines.extend(format_probe(probe, now, fresh, names[probe.id]))
 
     return "\n".join(lines)
 

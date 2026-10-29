@@ -197,9 +197,9 @@ def summary(
             parts.append(f"pit {format_reading(gateway.get_pit_temp())}")
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
-            parts.append(f"{names[probe.serial]} stale")
+            parts.append(f"{names[probe.id]} stale")
         else:
-            parts.append(f"{names[probe.serial]} {format_reading(probe.core_celsius())}")
+            parts.append(f"{names[probe.id]} {format_reading(probe.core_celsius())}")
     parts.append(f"{len(state.ringing)} ringing, {len(state.silenced)} silenced")
     if fetch_error is not None:
         parts.append("ETI unreachable, using last data")

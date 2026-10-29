@@ -29,7 +29,6 @@ from smoker_monitor.service.status import (
     SCHEMA_VERSION,
     STATUS_FILE,
     build_status,
-    eti_id,
     limit_c,
     write_status,
 )
@@ -47,6 +46,7 @@ GATEWAY = Gateway(
     pit=Reading(110.0, NOW),
     fan=Fan(set_temp_celsius=110.0, state=1, connected=True, activity=FanActivity.BLOWING),
     pit_alarms=PIT_LIMITS,
+    source="eti",
 )
 PROBE = Probe(
     serial="P1",
@@ -57,9 +57,10 @@ PROBE = Probe(
     alarms=AlarmSettings(high=AlarmLimit(True, 95.0), low=None),
     name="white probe",
     rings=(RingColour.WHITE,),
+    source="eti",
 )
 SNAPSHOT = Snapshot(taken_at=NOW, gateway=GATEWAY, probes=(PROBE,))
-PIT_HOT = Alarm(AlarmKind.PIT_HIGH, "G1", 182.0, 170.0)
+PIT_HOT = Alarm(AlarmKind.PIT_HIGH, "eti:G1", 182.0, 170.0)
 
 
 def status(
@@ -124,6 +125,7 @@ def test_gateway_as_a_pit() -> None:
         "high_c": 123.9,
         "low_c": 96.1,
         "fan": "blowing",
+        "fan_output_pct": None,
         "details": [
             {"label": "Battery", "value": "80%"},
             {"label": "Wi-Fi", "value": "-55 dBm"},
@@ -232,10 +234,6 @@ def test_alarm_without_a_device() -> None:
 
 
 # ----------------------------------------------------------------- helpers ---
-
-
-def test_eti_id() -> None:
-    assert eti_id("PROBE-1") == "eti:PROBE-1"
 
 
 def test_limit_c() -> None:

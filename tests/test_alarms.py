@@ -337,7 +337,7 @@ def test_idle_capture_only_reports_gateway_timeout() -> None:
     raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
     alarms = evaluate(to_snapshot(raw, NOW), NOW, AlarmRules())
     assert kinds(alarms) == [AlarmKind.GATEWAY_TIMEOUT]
-    assert alarms[0].device == "GATEWAY-1"
+    assert alarms[0].device == "eti:GATEWAY-1"
 
 
 def test_alarm_kinds_match_config_setting_names() -> None:
