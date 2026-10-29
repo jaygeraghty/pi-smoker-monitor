@@ -150,13 +150,9 @@ def evaluate(
         eti = gateway.pit_alarms
         mine = custom.get(gateway.id, NO_ALARMS)
         if rules.pit_high:
-            found.append(
-                check_limit(AlarmKind.PIT_HIGH, gateway.id, pit, eti.high, mine.high, True)
-            )
+            found.append(check_limit(AlarmKind.PIT_HIGH, gateway.id, pit, eti.high, mine.high, True))
         if rules.pit_low:
-            found.append(
-                check_limit(AlarmKind.PIT_LOW, gateway.id, pit, eti.low, mine.low, False)
-            )
+            found.append(check_limit(AlarmKind.PIT_LOW, gateway.id, pit, eti.low, mine.low, False))
 
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
@@ -177,13 +173,9 @@ def evaluate(
         eti = probe.alarms
         mine = custom.get(probe.id, NO_ALARMS)
         if rules.probe_high:
-            found.append(
-                check_limit(AlarmKind.PROBE_HIGH, probe.id, core, eti.high, mine.high, True)
-            )
+            found.append(check_limit(AlarmKind.PROBE_HIGH, probe.id, core, eti.high, mine.high, True))
         if rules.probe_low:
-            found.append(
-                check_limit(AlarmKind.PROBE_LOW, probe.id, core, eti.low, mine.low, False)
-            )
+            found.append(check_limit(AlarmKind.PROBE_LOW, probe.id, core, eti.low, mine.low, False))
 
     return tuple(alarm for alarm in found if alarm is not None)
 

@@ -53,11 +53,6 @@ ETI_SOURCE = "ETI Cloud"
 # ------------------------------------------------------------- helpers ---
 
 
-def eti_id(serial: str) -> str:
-    """The id screens use for an ETI device, e.g. 'eti:PROBE-1'."""
-    return f"eti:{serial}"
-
-
 def limit_c(limit: AlarmLimit | None) -> float | None:
     """An alarm limit in °C, or None if it isn't set up or is switched off."""
     if limit is None or not limit.enabled:
@@ -67,8 +62,8 @@ def limit_c(limit: AlarmLimit | None) -> float | None:
 
 def alarm_status(tracked: TrackedAlarm, snapshot: Snapshot) -> dict[str, Any]:
     """One alarm, with its plain-English message."""
-        device = None if tracked.alarm.device == NO_DEVICE else tracked.alarm.device
-        return {
+    device = None if tracked.alarm.device == NO_DEVICE else tracked.alarm.device
+    return {
         "kind": tracked.alarm.kind.value,
         "device": device,  # the id of the pit or probe it's about (None: no Gateway)
         "status": tracked.status.value,  # pending, ringing or silenced
@@ -77,6 +72,7 @@ def alarm_status(tracked: TrackedAlarm, snapshot: Snapshot) -> dict[str, Any]:
         "since": tracked.first_seen.isoformat(),
         "message": describe_alarm(tracked.alarm, snapshot),
     }
+
 
 
 def build_status(
@@ -99,9 +95,7 @@ def build_status(
         "sources": [{"name": ETI_SOURCE, "ok": fetch_error is None, "error": fetch_error}],
         "alarms": [alarm_status(tracked, snapshot) for tracked in state.tracked.values()],
         "pits": [] if snapshot.gateway is None else [pit_status(snapshot.gateway, now, rules)],
-        "probes": [
-            probe_status(probe, names[probe.id], now, rules) for probe in snapshot.probes
-        ],
+        "probes": [probe_status(probe, names[probe.id], now, rules) for probe in snapshot.probes],
     }
 
 
@@ -122,14 +116,13 @@ def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, 
         set_c = billows.set_temp_celsius
         fan_output_pct = billows.output_pct
 
-
     details = [
         {"label": "Battery", "value": format_percent(gateway.battery_pct)},
         {"label": "Wi-Fi", "value": format_dbm(gateway.wifi_dbm)},
     ]
 
     return {
-        "id": eti_id(gateway.id),
+        "id": gateway.id,
         "source": ETI_SOURCE,
         "kind": "gateway",  # a hub carrying a pit probe; later also "grill" (Traeger)
         "name": gateway_name(gateway),
@@ -150,7 +143,7 @@ def probe_status(probe: Probe, name: str, now: datetime, rules: AlarmRules) -> d
     fresh = is_fresh(probe.last_seen, now, timedelta(minutes=rules.probe_timeout_minutes))
 
     return {
-        "id": eti_id(probe.id),
+        "id": probe.id,
         "source": ETI_SOURCE,
         "name": name,
         "rings": [ring.value for ring in probe.rings],  # only the app's colours

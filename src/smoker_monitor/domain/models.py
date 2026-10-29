@@ -126,8 +126,7 @@ class Fan:
     connected: bool
     activity: FanActivity = FanActivity.UNKNOWN
     output_pct: int | None = None  # how hard it's running, 0-100, if the source says
-
-
+    
 
 @dataclass(frozen=True)
 class Gateway:
@@ -149,8 +148,6 @@ class Gateway:
     def id(self) -> str:
         """Unique across all sources, e.g. "eti:GATEWAY-1" (just the serial if no source)."""
         return f"{self.source}:{self.serial}" if self.source else self.serial
-
-
 
     def get_pit_temp(self) -> float | None:
         """Get the temp of the pit probes readings"""
