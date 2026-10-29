@@ -159,7 +159,7 @@ class Monitor:
         """Write the status file and tell the notifier."""
         write_status(
             self.state_dir / STATUS_FILE,
-            build_status(snapshot, self.state, now, self.fetch_error),
+            build_status(snapshot, self.state, now, self.rules, self.fetch_error),
         )
         messages = [describe_alarm(t.alarm, snapshot) for t in self.state.ringing]
         self.notifier.update(self.state, messages)

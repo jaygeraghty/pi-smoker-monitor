@@ -165,7 +165,7 @@ async def test_calm_cook_makes_no_noise_and_writes_status(tmp_path: Path) -> Non
     status = read_status(tmp_path)
     assert status["sound_on"] is False
     assert status["alarms"] == []
-    assert status["fetch_error"] is None
+    assert status["sources"] == [{"name": "ETI Cloud", "ok": True, "error": None}]
 
 
 # ---------------------------------------------------------------- ringing ---
@@ -239,7 +239,9 @@ async def test_failed_fetch_reuses_last_good_data(tmp_path: Path) -> None:
 
     assert monitor.snapshot is good
     assert monitor.fetch_error == "ETI Cloud is down"
-    assert read_status(tmp_path)["fetch_error"] == "ETI Cloud is down"
+    assert read_status(tmp_path)["sources"] == [
+        {"name": "ETI Cloud", "ok": False, "error": "ETI Cloud is down"}
+    ]
     assert not notifier.sound_on  # the old data is still fresh enough
 
 
@@ -286,7 +288,7 @@ async def test_never_any_data_rings_cant_reach_eti(tmp_path: Path) -> None:
 
     assert statuses(monitor) == {AlarmKind.ETI_UNREACHABLE: AlarmStatus.RINGING}
     assert notifier.sound_on
-    assert read_status(tmp_path)["gateway"] is None
+    assert read_status(tmp_path)["pits"] == []
 
 
 # ------------------------------------------------------------- live probes ---
