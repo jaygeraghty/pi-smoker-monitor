@@ -115,6 +115,10 @@ async def main() -> None:
     # Uses the app's own download code, so the capture always matches what the
     # app sees.
     config = load_config(CONFIG_FILE)
+    if config.eti_cloud is None:
+        raise SystemExit(
+            f"{CONFIG_FILE} has no [eti_cloud] section, so there's nothing to capture."
+        )
     raw = await fetch_raw(config.eti_cloud)
     save_json(raw, RAW_FILE)
 

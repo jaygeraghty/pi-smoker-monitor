@@ -33,7 +33,7 @@ from smoker_monitor.report import format_snapshot
 from smoker_monitor.service.combine import combine
 from smoker_monitor.service.monitor import Monitor, request_silence
 from smoker_monitor.sources.base import Source, SourceError
-from smoker_monitor.sources.eti_cloud import EtiCloudSource
+from smoker_monitor.sources.factory import build_sources
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -93,7 +93,7 @@ def handle_snapshot(config_path: Path) -> int:
         return EXIT_FAILED
 
     now = datetime.now(UTC)
-    snapshot = asyncio.run(fetch_all([EtiCloudSource(config.eti_cloud)], now))
+    snapshot = asyncio.run(fetch_all(build_sources(config), now))
     for source in snapshot.sources:
         if source.error is not None:
             print(f"Couldn't get readings from {source.name}: {source.error}", file=sys.stderr)
@@ -141,7 +141,7 @@ def handle_run(config_path: Path, state_dir: Path) -> int:
         return EXIT_FAILED
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-    sources: list[Source] = [EtiCloudSource(config.eti_cloud)]
+    sources = build_sources(config)
     monitor = Monitor(
         sources=sources,
         rules=config.alarms,

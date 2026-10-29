@@ -643,7 +643,9 @@ def test_live_fetch_from_eti_cloud() -> None:
     config_path = Path("config.toml")
     if not config_path.exists():
         pytest.skip("needs config.toml with your ETI Cloud login")
-    source = EtiCloudSource(load_config(config_path).eti_cloud)
+    settings = load_config(config_path).eti_cloud
+    assert settings is not None, "config.toml has no [eti_cloud] section"
+    source = EtiCloudSource(settings)
 
     async def fetch_and_close() -> Snapshot:
         try:

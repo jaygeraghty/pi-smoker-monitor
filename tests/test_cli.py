@@ -1,7 +1,7 @@
 """Tests for the `smoker` command line.
 
-The snapshot tests swap the real ETI Cloud source for a fake one (using
-pytest's monkeypatch), so they never touch the network.
+The tests swap the real sources for fake ones (using pytest's monkeypatch),
+so they never touch the network.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import pytest
 
 from smoker_monitor import __version__, cli
 from smoker_monitor.cli import main
-from smoker_monitor.config import EtiCloudSettings
+from smoker_monitor.config import Config, EtiCloudSettings
 from smoker_monitor.domain.models import Gateway, Snapshot
 from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.eti_cloud import to_snapshot
@@ -91,6 +91,16 @@ class FailingSource(FakeSource):
         raise SourceError("ETI Cloud is unreachable")
 
 
+def use_source(monkeypatch: pytest.MonkeyPatch, fake: type[FakeSource]) -> None:
+    """Make the CLI build `fake` instead of the real ETI Cloud source."""
+
+    def build_sources(config: Config) -> list[FakeSource]:
+        assert config.eti_cloud is not None
+        return [fake(config.eti_cloud)]
+
+    monkeypatch.setattr(cli, "build_sources", build_sources)
+
+
 def test_no_command_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([]) == 0
     assert "usage: smoker" in capsys.readouterr().out
@@ -116,7 +126,7 @@ def test_snapshot_missing_config_fails_cleanly(
 def test_snapshot_prints_readings(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    use_source(monkeypatch, FakeSource)
     main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
     assert "White probe" in captured.out
@@ -128,7 +138,7 @@ def test_snapshot_with_alarms_shows_them_and_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The old capture means the Gateway has been silent: an alarm, exit code 2."""
-    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    use_source(monkeypatch, FakeSource)
     code = main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
     assert code == 2
@@ -139,7 +149,7 @@ def test_snapshot_with_alarms_shows_them_and_exits_2(
 def test_snapshot_all_fine_exits_0(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FreshSource)
+    use_source(monkeypatch, FreshSource)
     code = main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
     assert code == 0
@@ -150,7 +160,7 @@ def test_snapshot_uses_alarm_settings_from_config(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Switching the Gateway timeout off in [alarms] silences the old capture."""
-    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    use_source(monkeypatch, FakeSource)
     path = write_config(tmp_path)
     path.write_text(VALID + "\n[alarms]\ngateway_timeout = false\n", encoding="utf-8")
     code = main(["snapshot", "--config", str(path)])
@@ -161,7 +171,7 @@ def test_snapshot_uses_alarm_settings_from_config(
 def test_snapshot_source_error_fails_cleanly(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FailingSource)
+    use_source(monkeypatch, FailingSource)
     code = main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
     assert code == 1
@@ -172,7 +182,7 @@ def test_snapshot_source_error_fails_cleanly(
 def test_snapshot_never_prints_password(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    use_source(monkeypatch, FakeSource)
     main(["snapshot", "--config", str(write_config(tmp_path))])
     captured = capsys.readouterr()
     assert "s3cret-pw" not in captured.out
@@ -206,7 +216,7 @@ def test_silence_leaves_a_request_for_the_monitor(
 def test_run_stops_cleanly_on_ctrl_c(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    use_source(monkeypatch, FakeSource)
     monkeypatch.setattr(cli, "Monitor", InterruptedMonitor)
     state_dir = tmp_path / "state"
     code = main(["run", "--config", str(write_config(tmp_path)), "--state-dir", str(state_dir)])
@@ -230,7 +240,7 @@ def test_run_missing_config_fails_cleanly(
 def test_snapshot_closes_the_connection(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FakeSource)
+    use_source(monkeypatch, FakeSource)
     main(["snapshot", "--config", str(write_config(tmp_path))])
     assert FakeSource.closed
 
@@ -238,6 +248,6 @@ def test_snapshot_closes_the_connection(
 def test_snapshot_closes_the_connection_after_a_failure(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli, "EtiCloudSource", FailingSource)
+    use_source(monkeypatch, FailingSource)
     main(["snapshot", "--config", str(write_config(tmp_path))])
     assert FakeSource.closed

@@ -1,6 +1,7 @@
 # Copy to config.toml (git-ignored) and fill in.
 # Values here are examples, not recommendations.
 
+# Each brand's section is optional: keep the ones you have (at least one).
 [eti_cloud]
 email = "you@example.com"
 password = "change-me"

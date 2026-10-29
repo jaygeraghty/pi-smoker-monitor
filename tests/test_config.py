@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from smoker_monitor.config import ConfigError, load_config
+from smoker_monitor.config import ConfigError, EtiCloudSettings, load_config
 from smoker_monitor.domain.alarms import AlarmRules
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -37,8 +37,16 @@ def write_config(tmp_path: Path, text: str) -> Path:
     return path
 
 
+def eti_settings(text: str, tmp_path: Path) -> EtiCloudSettings:
+    """The [eti_cloud] settings loaded from `text` (which must have them)."""
+    settings = load_config(write_config(tmp_path, text)).eti_cloud
+    assert settings is not None
+    return settings
+
+
 def test_valid_config_loads(tmp_path: Path) -> None:
     config = load_config(write_config(tmp_path, VALID))
+    assert config.eti_cloud is not None
     assert config.eti_cloud.email == "me@example.com"
     assert config.eti_cloud.password == "s3cret-pw"
     assert config.eti_cloud.referer == "https://cloud.etiltd.com/"
@@ -190,6 +198,18 @@ def test_unknown_alarm_setting_is_an_error(tmp_path: Path) -> None:
         load_config(write_config(tmp_path, text))
 
 
+def test_config_without_any_brand_is_an_error(tmp_path: Path) -> None:
+    text = "[polling]\ninterval_seconds = 30\n"
+    with pytest.raises(ConfigError, match="Nothing to monitor"):
+        load_config(write_config(tmp_path, text))
+
+
+def test_traeger_alone_is_not_enough_yet(tmp_path: Path) -> None:
+    text = "[polling]\ninterval_seconds = 30\n" + TRAEGER
+    with pytest.raises(ConfigError, match="Nothing to monitor"):
+        load_config(write_config(tmp_path, text))
+
+
 def test_renamed_alarm_setting_says_its_new_name(tmp_path: Path) -> None:
     text = VALID + "\n[alarms]\neti_unreachable_minutes = 5\n"
     with pytest.raises(ConfigError, match=r"now called source_unreachable_minutes"):
@@ -197,13 +217,12 @@ def test_renamed_alarm_setting_says_its_new_name(tmp_path: Path) -> None:
 
 
 def test_brand_polls_at_the_main_interval_by_default(tmp_path: Path) -> None:
-    config = load_config(write_config(tmp_path, VALID))
-    assert config.eti_cloud.poll_seconds == config.polling.interval_seconds == 30
+    assert eti_settings(VALID, tmp_path).poll_seconds == 30  # [polling] interval_seconds
 
 
 def test_brand_can_set_its_own_poll_seconds(tmp_path: Path) -> None:
     text = VALID.replace("[polling]", "poll_seconds = 60\n\n[polling]")
-    assert load_config(write_config(tmp_path, text)).eti_cloud.poll_seconds == 60
+    assert eti_settings(text, tmp_path).poll_seconds == 60
 
 
 @pytest.mark.parametrize("bad", ["0", '"60"'])

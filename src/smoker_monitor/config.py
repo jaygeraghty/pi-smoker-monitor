@@ -59,9 +59,10 @@ class PollingSettings:
 
 @dataclass(frozen=True)
 class Config:
-    """All settings the app needs."""
+    """All settings the app needs. Each brand's section is optional, but at
+    least one brand must be set up."""
 
-    eti_cloud: EtiCloudSettings
+    eti_cloud: EtiCloudSettings | None
     polling: PollingSettings
     traeger_mqtt: TraegerSettings | None = None
     alarms: AlarmRules = field(default_factory=AlarmRules)
@@ -87,14 +88,16 @@ def load_config(path: Path) -> Config:
     if interval <= 0:
         raise ConfigError("[polling] interval_seconds must be greater than 0")
 
-    eti_cloud = EtiCloudSettings(
-        email=_get_str(data, "eti_cloud", "email"),
-        password=_get_str(data, "eti_cloud", "password"),
-        api_key=_get_str(data, "eti_cloud", "api_key"),
-        app_id=_get_str(data, "eti_cloud", "app_id"),
-        referer=_get_str(data, "eti_cloud", "referer"),
-        poll_seconds=_poll_seconds(data, "eti_cloud", interval),
-    )
+    eti_cloud = None
+    if "eti_cloud" in data:
+        eti_cloud = EtiCloudSettings(
+            email=_get_str(data, "eti_cloud", "email"),
+            password=_get_str(data, "eti_cloud", "password"),
+            api_key=_get_str(data, "eti_cloud", "api_key"),
+            app_id=_get_str(data, "eti_cloud", "app_id"),
+            referer=_get_str(data, "eti_cloud", "referer"),
+            poll_seconds=_poll_seconds(data, "eti_cloud", interval),
+        )
     traeger_mqtt = None
     if "traeger_mqtt" in data:
         traeger_mqtt = TraegerSettings(
@@ -102,6 +105,10 @@ def load_config(path: Path) -> Config:
             password=_get_str(data, "traeger_mqtt", "password"),
             client_id=_get_str(data, "traeger_mqtt", "client_id"),
         )
+
+    # Traeger settings are read, but it can't be monitored yet, so it doesn't count.
+    if eti_cloud is None:
+        raise ConfigError("Nothing to monitor: add an [eti_cloud] section to the config")
 
     return Config(
         eti_cloud=eti_cloud,
