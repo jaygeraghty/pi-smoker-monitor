@@ -64,7 +64,6 @@ from smoker_monitor.domain.models import (
 from smoker_monitor.domain.units import f_to_c
 from smoker_monitor.sources.base import SourceError
 
-
 # The short name stamped on every device from ETI Cloud, so ids are "eti:...".
 SOURCE_KEY = "eti"
 GATEWAY_NAME = "rfx gateway"
