@@ -40,3 +40,6 @@ replit.md
 .local/
 
 .cache/
+
+# Deskless (phone editor) project settings
+.deskless/
