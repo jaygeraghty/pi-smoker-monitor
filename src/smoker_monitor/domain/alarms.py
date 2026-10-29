@@ -150,7 +150,9 @@ def evaluate(
         eti = gateway.pit_alarms
         mine = custom.get(gateway.id, NO_ALARMS)
         if rules.pit_high:
-            found.append(check_limit(AlarmKind.PIT_HIGH, gateway.id, pit, eti.high, mine.high, True))
+            found.append(
+                check_limit(AlarmKind.PIT_HIGH, gateway.id, pit, eti.high, mine.high, True)
+            )
         if rules.pit_low:
             found.append(check_limit(AlarmKind.PIT_LOW, gateway.id, pit, eti.low, mine.low, False))
 
@@ -173,7 +175,9 @@ def evaluate(
         eti = probe.alarms
         mine = custom.get(probe.id, NO_ALARMS)
         if rules.probe_high:
-            found.append(check_limit(AlarmKind.PROBE_HIGH, probe.id, core, eti.high, mine.high, True))
+            found.append(
+                check_limit(AlarmKind.PROBE_HIGH, probe.id, core, eti.high, mine.high, True)
+            )
         if rules.probe_low:
             found.append(check_limit(AlarmKind.PROBE_LOW, probe.id, core, eti.low, mine.low, False))
 

@@ -74,7 +74,6 @@ def alarm_status(tracked: TrackedAlarm, snapshot: Snapshot) -> dict[str, Any]:
     }
 
 
-
 def build_status(
     snapshot: Snapshot,
     state: AlarmState,
