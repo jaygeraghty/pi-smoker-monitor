@@ -30,5 +30,6 @@ Repo layout, tooling (uv, ruff, mypy, pytest, pre-commit), CI, docs.
 - [ ] Choose framework; pit, set temp, fan, probes, alarm banner, acknowledge
 
 ## Later
+- Multi-brand support (Traeger, Meater, ...): see docs/multi-brand.md
 - DIY pit-controller Pi as a second `Source` (MQTT)
 - Cook history / graphs
