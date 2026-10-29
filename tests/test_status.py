@@ -8,12 +8,13 @@ is fresh, so screens never need the alarm rules.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from smoker_monitor.domain.alarm_state import AlarmState, step
-from smoker_monitor.domain.alarms import NO_DEVICE, Alarm, AlarmKind, AlarmRules
+from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules
 from smoker_monitor.domain.models import (
     AlarmLimit,
     AlarmSettings,
@@ -24,6 +25,7 @@ from smoker_monitor.domain.models import (
     Reading,
     RingColour,
     Snapshot,
+    SourceHealth,
 )
 from smoker_monitor.service.status import (
     SCHEMA_VERSION,
@@ -59,17 +61,14 @@ PROBE = Probe(
     rings=(RingColour.WHITE,),
     source="eti",
 )
-SNAPSHOT = Snapshot(taken_at=NOW, gateways=(GATEWAY,), probes=(PROBE,))
+ETI = SourceHealth(key="eti", name="ETI Cloud", expects_gateway=True)
+SNAPSHOT = Snapshot(taken_at=NOW, gateways=(GATEWAY,), probes=(PROBE,), sources=(ETI,))
 PIT_HOT = Alarm(AlarmKind.PIT_HIGH, "eti:G1", 182.0, 170.0)
 
 
-def status(
-    snapshot: Snapshot = SNAPSHOT,
-    state: AlarmState | None = None,
-    fetch_error: str | None = None,
-) -> dict[str, Any]:
+def status(snapshot: Snapshot = SNAPSHOT, state: AlarmState | None = None) -> dict[str, Any]:
     """build_status with the usual time and rules."""
-    return build_status(snapshot, state or AlarmState(), NOW, RULES, fetch_error)
+    return build_status(snapshot, state or AlarmState(), NOW, RULES)
 
 
 def ringing(alarm: Alarm) -> AlarmState:
@@ -87,7 +86,7 @@ def pit(snapshot: Snapshot = SNAPSHOT) -> dict[str, Any]:
 
 def probe(item: Probe) -> dict[str, Any]:
     """The status of a single probe."""
-    [only] = status(Snapshot(NOW, (GATEWAY,), (item,)))["probes"]
+    [only] = status(Snapshot(NOW, (GATEWAY,), (item,), (ETI,)))["probes"]
     result: dict[str, Any] = only
     return result
 
@@ -105,8 +104,24 @@ def test_top_level_when_all_is_well() -> None:
 
 
 def test_failed_fetch_shows_in_sources() -> None:
-    result = status(fetch_error="ETI Cloud is down")
+    down = replace(ETI, error="ETI Cloud is down", failing_since=NOW)
+    result = status(replace(SNAPSHOT, sources=(down,)))
     assert result["sources"] == [{"name": "ETI Cloud", "ok": False, "error": "ETI Cloud is down"}]
+
+
+def test_every_source_is_listed() -> None:
+    other = SourceHealth(key="other", name="Other", expects_gateway=False)
+    names = [s["name"] for s in status(replace(SNAPSHOT, sources=(ETI, other)))["sources"]]
+    assert names == ["ETI Cloud", "Other"]
+
+
+def test_each_device_names_its_own_source() -> None:
+    other = SourceHealth(key="other", name="Other", expects_gateway=False)
+    theirs = replace(PROBE, source="other")
+    snapshot = Snapshot(NOW, (GATEWAY,), (PROBE, theirs), (ETI, other))
+    result = status(snapshot)
+    assert [p["source"] for p in result["probes"]] == ["ETI Cloud", "Other"]
+    assert [p["id"] for p in result["probes"]] == ["eti:P1", "other:P1"]
 
 
 # --------------------------------------------------------------------- pit ---
@@ -217,6 +232,7 @@ def test_ringing_alarm_points_at_its_device() -> None:
     assert alarm == {
         "kind": "pit_high",
         "device": "eti:G1",  # matches the pit's id
+        "source": None,  # only set for alarms about a whole source
         "status": "ringing",
         "value": 182.0,
         "limit": 170.0,
@@ -225,12 +241,13 @@ def test_ringing_alarm_points_at_its_device() -> None:
     }
 
 
-def test_alarm_without_a_device() -> None:
-    """'No RFX Gateway found' isn't about any one device."""
-    missing = Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0)
-    [alarm] = status(Snapshot(NOW, (), ()), ringing(missing))["alarms"]
+def test_alarm_about_a_whole_source() -> None:
+    """'No gateway found' isn't about any one device, but about ETI Cloud."""
+    missing = Alarm(AlarmKind.GATEWAY_TIMEOUT, "eti", None, 5.0)
+    [alarm] = status(Snapshot(NOW, (), (), (ETI,)), ringing(missing))["alarms"]
     assert alarm["device"] is None
-    assert alarm["message"] == "No RFX Gateway found"
+    assert alarm["source"] == "ETI Cloud"
+    assert alarm["message"] == "No gateway found from ETI Cloud"
 
 
 # ----------------------------------------------------------------- helpers ---

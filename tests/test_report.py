@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from smoker_monitor.domain.alarms import NO_DEVICE, Alarm, AlarmKind, AlarmRules, evaluate
+from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules, evaluate
 from smoker_monitor.domain.models import (
     NO_ALARMS,
     AlarmLimit,
@@ -19,6 +19,7 @@ from smoker_monitor.domain.models import (
     Probe,
     Reading,
     Snapshot,
+    SourceHealth,
 )
 from smoker_monitor.report import (
     describe_alarm,
@@ -185,7 +186,8 @@ WHITE_PROBE = Probe(
     last_seen=NOW,
     sensors=(Reading(celsius=96.0, taken_at=NOW),),
 )
-WITH_PROBE = Snapshot(taken_at=NOW, gateways=(), probes=(WHITE_PROBE,))
+ETI = SourceHealth(key="eti", name="ETI Cloud", expects_gateway=True)
+WITH_PROBE = Snapshot(taken_at=NOW, gateways=(), probes=(WHITE_PROBE,), sources=(ETI,))
 
 
 @pytest.mark.parametrize(
@@ -202,7 +204,7 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateways=(), probes=(WHITE_PROBE,))
             Alarm(AlarmKind.GATEWAY_TIMEOUT, "G1", 12.7, 5.0),
             "Gateway silent for 12 min (limit 5 min)",
         ),
-        (Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0), "No RFX Gateway found"),
+        (Alarm(AlarmKind.GATEWAY_TIMEOUT, "eti", None, 5.0), "No gateway found from ETI Cloud"),
         (
             Alarm(AlarmKind.PROBE_TIMEOUT, "P1", 7.0, 5.0),
             "RFX MEAT silent for 7 min (limit 5 min)",
@@ -210,7 +212,7 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateways=(), probes=(WHITE_PROBE,))
         (Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10), "Gateway battery low: 8% (below 10%)"),
         (Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10), "RFX MEAT battery low: 5% (below 10%)"),
         (
-            Alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, 6.0, 5.0),
+            Alarm(AlarmKind.SOURCE_UNREACHABLE, "eti", 6.0, 5.0),
             "Can't reach ETI Cloud for 6 min (limit 5 min): readings are out of date",
         ),
     ],
@@ -223,6 +225,11 @@ def test_every_alarm_kind_has_wording() -> None:
     """A new AlarmKind without wording would fail here (and in mypy)."""
     for kind in AlarmKind:
         assert describe_alarm(Alarm(kind, "P1", 1.0, 2.0), WITH_PROBE)
+
+
+def test_unknown_source_falls_back_to_its_key() -> None:
+    alarm = Alarm(AlarmKind.SOURCE_UNREACHABLE, "mystery", 6.0, 5.0)
+    assert describe_alarm(alarm, WITH_PROBE).startswith("Can't reach mystery for")
 
 
 def test_unreadable_limit_is_shown_as_dashes() -> None:

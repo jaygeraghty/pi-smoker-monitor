@@ -1,6 +1,6 @@
 """Tests for the monitor loop behind `smoker run`.
 
-Everything the Monitor talks to is faked: the source hands out prepared
+Everything the Monitor talks to is faked: each source hands out prepared
 Snapshots (or errors), the clock is set by hand, sleeping is instant, and the
 notifier just records what it was told. So each test can play out a cook,
 poll by poll, in a fraction of a second.
@@ -28,6 +28,7 @@ from smoker_monitor.domain.models import (
 from smoker_monitor.service.monitor import (
     SILENCE_FILE,
     Monitor,
+    SourceState,
     request_silence,
     summary,
 )
@@ -55,11 +56,18 @@ class Clock:
 class ScriptedSource:
     """Hands out the prepared results in order: a Snapshot, or an error to raise."""
 
-    def __init__(self, *results: Snapshot | Exception) -> None:
+    name = "ETI Cloud"
+    expects_gateway = True
+
+    def __init__(self, *results: Snapshot | Exception, key: str = "eti", poll: int = 30) -> None:
+        self.key = key
+        self.poll_seconds = poll
         self.results = list(results)
+        self.fetches = 0
         self.closed = False
 
     async def fetch(self) -> Snapshot:
+        self.fetches += 1
         result = self.results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -104,6 +112,7 @@ def gateway(seen: datetime, pit: float = 110.0) -> Gateway:
         pit=Reading(pit, seen),
         fan=None,
         pit_alarms=PIT_LIMITS,
+        source="eti",
     )
 
 
@@ -115,6 +124,7 @@ def probe(seen: datetime, core: float = 60.0) -> Probe:
         battery_pct=90,
         last_seen=seen,
         sensors=(Reading(core, seen), Reading(core + 5, seen)),
+        source="eti",
     )
 
 
@@ -128,7 +138,7 @@ def make_monitor(
     clock = Clock()
     notifier = RecordingNotifier()
     monitor = Monitor(
-        source=ScriptedSource(*results),
+        sources=[ScriptedSource(*results)],
         rules=AlarmRules(),
         notifier=notifier,
         state_dir=tmp_path,
@@ -148,6 +158,12 @@ async def poll_times(monitor: Monitor, clock: Clock, count: int) -> None:
 def read_status(tmp_path: Path) -> dict[str, object]:
     data: dict[str, object] = json.loads((tmp_path / STATUS_FILE).read_text(encoding="utf-8"))
     return data
+
+
+def eti(monitor: Monitor) -> SourceState:
+    """What the monitor remembers about its (only) source."""
+    [only] = monitor.states
+    return only
 
 
 def statuses(monitor: Monitor) -> dict[AlarmKind, AlarmStatus]:
@@ -237,8 +253,9 @@ async def test_failed_fetch_reuses_last_good_data(tmp_path: Path) -> None:
     monitor, clock, notifier = make_monitor(tmp_path, good, SourceError("ETI Cloud is down"))
     await poll_times(monitor, clock, 2)
 
-    assert monitor.snapshot is good
-    assert monitor.fetch_error == "ETI Cloud is down"
+    assert eti(monitor).last_good is good
+    assert monitor.snapshot is not None and monitor.snapshot.gateways == good.gateways
+    assert eti(monitor).error == "ETI Cloud is down"
     assert read_status(tmp_path)["sources"] == [
         {"name": "ETI Cloud", "ok": False, "error": "ETI Cloud is down"}
     ]
@@ -250,7 +267,7 @@ async def test_fetch_working_again_clears_the_error(tmp_path: Path) -> None:
         tmp_path, snapshot(START), SourceError("down"), snapshot(START + 2 * POLL)
     )
     await poll_times(monitor, clock, 3)
-    assert monitor.fetch_error is None
+    assert eti(monitor).error is None
 
 
 async def test_long_outage_rings_cant_reach_eti_not_gateway_silent(tmp_path: Path) -> None:
@@ -259,7 +276,7 @@ async def test_long_outage_rings_cant_reach_eti_not_gateway_silent(tmp_path: Pat
     monitor, clock, notifier = make_monitor(tmp_path, snapshot(START), *outage)
     await poll_times(monitor, clock, 14)  # 6.5 minutes in total
 
-    assert statuses(monitor) == {AlarmKind.ETI_UNREACHABLE: AlarmStatus.RINGING}
+    assert statuses(monitor) == {AlarmKind.SOURCE_UNREACHABLE: AlarmStatus.RINGING}
     assert notifier.sound_on
 
 
@@ -278,7 +295,7 @@ async def test_outage_ending_lets_cant_reach_alarm_clear(tmp_path: Path) -> None
     monitor, clock, _ = make_monitor(tmp_path, snapshot(START), *outage, *back)
     await poll_times(monitor, clock, 16)
 
-    assert monitor.failing_since is None
+    assert eti(monitor).failing_since is None
     assert monitor.state.tracked == {}
 
 
@@ -286,7 +303,7 @@ async def test_never_any_data_rings_cant_reach_eti(tmp_path: Path) -> None:
     monitor, clock, notifier = make_monitor(tmp_path, *[SourceError("down")] * 13)
     await poll_times(monitor, clock, 13)  # last poll 6 minutes after the first
 
-    assert statuses(monitor) == {AlarmKind.ETI_UNREACHABLE: AlarmStatus.RINGING}
+    assert statuses(monitor) == {AlarmKind.SOURCE_UNREACHABLE: AlarmStatus.RINGING}
     assert notifier.sound_on
     assert read_status(tmp_path)["pits"] == []
 
@@ -303,7 +320,7 @@ async def test_probe_that_goes_quiet_mid_cook_rings(tmp_path: Path) -> None:
         snapshot(later + POLL, probes=(probe(START),)),
     )
     await monitor.poll_once()
-    assert monitor.live_probes == {"P1"}
+    assert monitor.live_probes == {"eti:P1"}
 
     clock.now = later
     await poll_times(monitor, clock, 2)
@@ -330,18 +347,28 @@ async def test_probe_left_in_the_drawer_is_ignored(tmp_path: Path) -> None:
 
 
 async def test_run_forever_survives_an_unexpected_error(tmp_path: Path) -> None:
-    sleeps = 0
+    class BuggyNotifier(RecordingNotifier):
+        """Crashes the first time it's used."""
+
+        crashed = False
+
+        def update(self, state: AlarmState, messages: list[str]) -> None:
+            if not self.crashed:
+                self.crashed = True
+                raise RuntimeError("bug!")
+            super().update(state, messages)
+
+    monitor, _, _ = make_monitor(tmp_path, snapshot(START), snapshot(START))
+    notifier = BuggyNotifier()
+    monitor.notifier = notifier
 
     async def stop_after_two_polls(seconds: float) -> None:
-        nonlocal sleeps
-        sleeps += 1
-        if sleeps == 2:
+        if notifier.updates:  # the second poll has happened
             raise StopLoop
 
-    monitor, _, notifier = make_monitor(tmp_path, RuntimeError("bug!"), snapshot(START))
     monitor.sleep = stop_after_two_polls
     with pytest.raises(StopLoop):
-        await monitor.run_forever(1)
+        await monitor.run_forever()
 
     assert len(notifier.updates) == 1  # the second poll still happened
     assert (tmp_path / STATUS_FILE).exists()
@@ -357,7 +384,7 @@ async def test_run_forever_ignores_silence_request_from_before_it_started(
     monitor, _, _ = make_monitor(tmp_path, snapshot(START))
     monitor.sleep = stop
     with pytest.raises(StopLoop):
-        await monitor.run_forever(30)
+        await monitor.run_forever()
 
     assert not (tmp_path / SILENCE_FILE).exists()
 
@@ -366,13 +393,13 @@ async def test_run_forever_closes_the_source_when_stopped(tmp_path: Path) -> Non
     async def stop(seconds: float) -> None:
         raise StopLoop
 
-    source = ScriptedSource(snapshot(START))
+    sources = [ScriptedSource(snapshot(START)), ScriptedSource(snapshot(START), key="other")]
     monitor, _, _ = make_monitor(tmp_path)
-    monitor.source = source
+    monitor.states = [SourceState(source) for source in sources]
     monitor.sleep = stop
     with pytest.raises(StopLoop):
-        await monitor.run_forever(30)
-    assert source.closed
+        await monitor.run_forever()
+    assert all(source.closed for source in sources)
 
 
 # ---------------------------------------------------------------- summary ---
@@ -383,10 +410,12 @@ async def test_summary_line(tmp_path: Path) -> None:
         tmp_path, snapshot(START, pit=110.0, probes=(probe(START, core=68.2),))
     )
     await monitor.poll_once()
-    line = summary(monitor.snapshot or snapshot(START), monitor.state, "down", START, AlarmRules())
+    assert monitor.snapshot is not None
+    down = replace(monitor.snapshot.sources[0], error="down", failing_since=START)
+    line = summary(replace(monitor.snapshot, sources=(down,)), monitor.state, START, AlarmRules())
     assert line == (
         "pit 110.0°C | white probe 68.2°C | 0 ringing, 0 silenced"
-        " | ETI unreachable, using last data"
+        " | ETI Cloud unreachable, using last data"
     )
 
 
@@ -394,14 +423,14 @@ def test_summary_shows_stale_probe_instead_of_old_temperature() -> None:
     """A probe last seen at lunchtime mustn't look like a live 22.9°C at night."""
     old = START - timedelta(hours=9)
     line = summary(
-        snapshot(START, probes=(probe(old, core=22.9),)), AlarmState(), None, START, AlarmRules()
+        snapshot(START, probes=(probe(old, core=22.9),)), AlarmState(), START, AlarmRules()
     )
     assert line == "pit 110.0°C | white probe stale | 0 ringing, 0 silenced"
 
 
 def test_summary_shows_stale_gateway() -> None:
     old = START - timedelta(minutes=6)
-    line = summary(snapshot(old), AlarmState(), None, START, AlarmRules())
+    line = summary(snapshot(old), AlarmState(), START, AlarmRules())
     assert line == "pit stale | 0 ringing, 0 silenced"
 
 
@@ -412,5 +441,96 @@ def test_summary_without_readings() -> None:
         gateways=(replace(fresh.gateways[0], pit=None),),
         probes=(replace(fresh.probes[0], sensors=()),),
     )
-    line = summary(no_pit, AlarmState(), None, START, AlarmRules())
+    line = summary(no_pit, AlarmState(), START, AlarmRules())
     assert line == "pit -- | white probe -- | 0 ringing, 0 silenced"
+
+
+# ---------------------------------------------------------- many sources ---
+
+
+def two_source_monitor(
+    tmp_path: Path, first: ScriptedSource, second: ScriptedSource
+) -> tuple[Monitor, Clock]:
+    clock = Clock()
+    monitor = Monitor(
+        sources=[first, second],
+        rules=AlarmRules(),
+        notifier=RecordingNotifier(),
+        state_dir=tmp_path,
+        clock=clock,
+        sleep=no_sleep,
+    )
+    return monitor, clock
+
+
+def other_snapshot(at: datetime) -> Snapshot:
+    """A second brand's Snapshot: one probe, labelled with its own source."""
+    return Snapshot(at, (), (replace(probe(at, core=40.0), source="other"),))
+
+
+async def test_every_sources_devices_are_combined(tmp_path: Path) -> None:
+    other = ScriptedSource(other_snapshot(START), key="other")
+    monitor, _ = two_source_monitor(tmp_path, ScriptedSource(snapshot(START)), other)
+    await monitor.poll_once()
+
+    assert monitor.snapshot is not None
+    assert [p.id for p in monitor.snapshot.probes] == ["other:P1"]
+    assert [g.id for g in monitor.snapshot.gateways] == ["eti:G1"]
+    assert [s.key for s in monitor.snapshot.sources] == ["eti", "other"]
+
+
+async def test_each_source_is_polled_on_its_own_schedule(tmp_path: Path) -> None:
+    fast = ScriptedSource(*[snapshot(START)] * 4, poll=30)
+    slow = ScriptedSource(*[other_snapshot(START)] * 2, key="other", poll=60)
+    monitor, clock = two_source_monitor(tmp_path, fast, slow)
+    await poll_times(monitor, clock, 4)  # at 0, 30, 60 and 90 seconds
+
+    assert fast.fetches == 4
+    assert slow.fetches == 2  # at 0 and 60 seconds
+
+
+async def test_wait_is_until_the_next_source_is_due(tmp_path: Path) -> None:
+    fast = ScriptedSource(snapshot(START), poll=30)
+    slow = ScriptedSource(other_snapshot(START), key="other", poll=60)
+    monitor, clock = two_source_monitor(tmp_path, fast, slow)
+    await monitor.poll_once()
+    assert monitor.seconds_until_due() == 30
+
+    clock.now += timedelta(seconds=29.5)
+    assert monitor.seconds_until_due() == 1  # never less than a second
+
+
+async def test_one_source_failing_doesnt_stop_the_other(tmp_path: Path) -> None:
+    other = ScriptedSource(SourceError("down"), key="other")
+    monitor, _ = two_source_monitor(tmp_path, ScriptedSource(snapshot(START)), other)
+    await monitor.poll_once()
+
+    assert monitor.snapshot is not None
+    assert [g.id for g in monitor.snapshot.gateways] == ["eti:G1"]
+    sources = read_status(tmp_path)["sources"]
+    assert isinstance(sources, list)
+    assert [s["ok"] for s in sources] == [True, False]
+
+
+async def test_a_bug_in_a_source_counts_as_it_failing(tmp_path: Path) -> None:
+    """A source crashing must not stop the other sources (or the alarms) working."""
+    other = ScriptedSource(RuntimeError("bug!"), key="other")
+    monitor, _ = two_source_monitor(tmp_path, ScriptedSource(snapshot(START)), other)
+    await monitor.poll_once()
+
+    assert monitor.states[1].error == "ETI Cloud failed unexpectedly (see the log)"
+    assert monitor.states[1].failing_since == START
+    assert monitor.states[0].error is None
+
+
+async def test_device_without_a_source_is_labelled(tmp_path: Path) -> None:
+    unlabelled = Snapshot(START, (replace(gateway(START), source=""),), ())
+    monitor, _, _ = make_monitor(tmp_path, unlabelled)
+    await monitor.poll_once()
+    assert monitor.snapshot is not None
+    assert [g.id for g in monitor.snapshot.gateways] == ["eti:G1"]
+
+
+def test_two_sources_cant_share_a_key(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="share a key"):
+        two_source_monitor(tmp_path, ScriptedSource(), ScriptedSource())

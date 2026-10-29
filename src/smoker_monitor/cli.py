@@ -7,7 +7,7 @@ Commands:
 
 Exit codes for `smoker snapshot`:
     0  all fine
-    1  couldn't run (config problem, or ETI Cloud unreachable)
+    1  couldn't run (config problem, or no source could be reached)
     2  readings fetched, and at least one alarm is active
 
 Keep this module thin: parse arguments, load config, call into the package.
@@ -20,15 +20,17 @@ import asyncio
 import logging
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from smoker_monitor import __version__
 from smoker_monitor.config import ConfigError, load_config
 from smoker_monitor.domain.alarms import evaluate
-from smoker_monitor.domain.models import Snapshot
+from smoker_monitor.domain.models import Snapshot, SourceHealth
 from smoker_monitor.notifiers.console import ConsoleNotifier
 from smoker_monitor.report import format_snapshot
+from smoker_monitor.service.combine import combine
 from smoker_monitor.service.monitor import Monitor, request_silence
 from smoker_monitor.sources.base import Source, SourceError
 from smoker_monitor.sources.eti_cloud import EtiCloudSource
@@ -90,22 +92,42 @@ def handle_snapshot(config_path: Path) -> int:
         print(f"Config problem: {e}", file=sys.stderr)
         return EXIT_FAILED
 
-    try:
-        snapshot = asyncio.run(fetch_once(EtiCloudSource(config.eti_cloud)))
-    except SourceError as e:
-        print(f"Couldn't get readings: {e}", file=sys.stderr)
+    now = datetime.now(UTC)
+    snapshot = asyncio.run(fetch_all([EtiCloudSource(config.eti_cloud)], now))
+    for source in snapshot.sources:
+        if source.error is not None:
+            print(f"Couldn't get readings from {source.name}: {source.error}", file=sys.stderr)
+    if all(source.error is not None for source in snapshot.sources):
         return EXIT_FAILED
 
-    now = datetime.now(UTC)
     alarms = evaluate(snapshot, now, config.alarms)
     print(format_snapshot(snapshot, now, alarms, config.alarms))
     return EXIT_ALARMS if alarms else EXIT_OK
 
 
-async def fetch_once(source: Source) -> Snapshot:
-    """Fetch one Snapshot, then close the source's connection."""
+async def fetch_all(sources: Sequence[Source], now: datetime) -> Snapshot:
+    """Fetch from every source at once, close them, and combine the results.
+
+    A source that fails adds no devices; its error is in the Snapshot's sources.
+    """
+    results = await asyncio.gather(*(fetch_once(source) for source in sources))
+    parts: list[tuple[SourceHealth, Snapshot | None]] = []
+    for source, result in zip(sources, results, strict=True):
+        health = SourceHealth(source.key, source.name, source.expects_gateway)
+        if isinstance(result, SourceError):
+            health = replace(health, error=str(result), failing_since=now)
+            parts.append((health, None))
+        else:
+            parts.append((health, result))
+    return combine(now, parts)
+
+
+async def fetch_once(source: Source) -> Snapshot | SourceError:
+    """Fetch one Snapshot (or the error saying why not), then close the source."""
     try:
         return await source.fetch()
+    except SourceError as e:
+        return e
     finally:
         await source.close()
 
@@ -119,15 +141,17 @@ def handle_run(config_path: Path, state_dir: Path) -> int:
         return EXIT_FAILED
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    sources: list[Source] = [EtiCloudSource(config.eti_cloud)]
     monitor = Monitor(
-        source=EtiCloudSource(config.eti_cloud),
+        sources=sources,
         rules=config.alarms,
         notifier=ConsoleNotifier(),
         state_dir=state_dir,
     )
-    print(f"Monitoring every {config.polling.interval_seconds} s. Ctrl+C to stop.")
+    watching = ", ".join(f"{s.name} every {s.poll_seconds} s" for s in sources)
+    print(f"Monitoring {watching}. Ctrl+C to stop.")
     try:
-        asyncio.run(monitor.run_forever(config.polling.interval_seconds))
+        asyncio.run(monitor.run_forever())
     except KeyboardInterrupt:
         print("Stopped.")
     return EXIT_OK

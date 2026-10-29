@@ -112,9 +112,14 @@ class EtiCloudSource:
     with a new login. Call `close()` when finished with it.
     """
 
+    key = SOURCE_KEY
+    name = "ETI Cloud"
+    expects_gateway = True  # ETI probes report through an RFX Gateway
+
     def __init__(
         self, settings: EtiCloudSettings, timeout_seconds: float = FETCH_TIMEOUT_SECONDS
     ) -> None:
+        self.poll_seconds = settings.poll_seconds
         self._settings = settings
         self._timeout_seconds = timeout_seconds
         self._session: ClientSession | None = None

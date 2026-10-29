@@ -164,7 +164,7 @@ pit_low = false
 probe_low = true
 gateway_timeout_minutes = 10
 probe_battery_pct = 0
-eti_unreachable_minutes = 15
+source_unreachable_minutes = 15
 """
     )
     rules = load_config(write_config(tmp_path, text)).alarms
@@ -172,7 +172,7 @@ eti_unreachable_minutes = 15
     assert rules.probe_low is True
     assert rules.gateway_timeout_minutes == 10
     assert rules.probe_battery_pct == 0  # 0 switches the battery alarm off
-    assert rules.eti_unreachable_minutes == 15
+    assert rules.source_unreachable_minutes == 15
 
 
 def test_settings_left_out_keep_their_defaults(tmp_path: Path) -> None:
@@ -190,6 +190,29 @@ def test_unknown_alarm_setting_is_an_error(tmp_path: Path) -> None:
         load_config(write_config(tmp_path, text))
 
 
+def test_renamed_alarm_setting_says_its_new_name(tmp_path: Path) -> None:
+    text = VALID + "\n[alarms]\neti_unreachable_minutes = 5\n"
+    with pytest.raises(ConfigError, match=r"now called source_unreachable_minutes"):
+        load_config(write_config(tmp_path, text))
+
+
+def test_brand_polls_at_the_main_interval_by_default(tmp_path: Path) -> None:
+    config = load_config(write_config(tmp_path, VALID))
+    assert config.eti_cloud.poll_seconds == config.polling.interval_seconds == 30
+
+
+def test_brand_can_set_its_own_poll_seconds(tmp_path: Path) -> None:
+    text = VALID.replace("[polling]", "poll_seconds = 60\n\n[polling]")
+    assert load_config(write_config(tmp_path, text)).eti_cloud.poll_seconds == 60
+
+
+@pytest.mark.parametrize("bad", ["0", '"60"'])
+def test_brand_poll_seconds_must_be_a_positive_number(tmp_path: Path, bad: str) -> None:
+    text = VALID.replace("[polling]", f"poll_seconds = {bad}\n\n[polling]")
+    with pytest.raises(ConfigError, match=r"\[eti_cloud\] poll_seconds"):
+        load_config(write_config(tmp_path, text))
+
+
 @pytest.mark.parametrize("bad", ['"yes"', "1", '"true"'])
 def test_alarm_switch_must_be_true_or_false(tmp_path: Path, bad: str) -> None:
     text = VALID + f"\n[alarms]\npit_high = {bad}\n"
@@ -204,7 +227,7 @@ def test_alarm_switch_must_be_true_or_false(tmp_path: Path, bad: str) -> None:
         ("probe_timeout_minutes", "-1"),
         ("gateway_battery_pct", "101"),
         ("probe_battery_pct", "-5"),
-        ("eti_unreachable_minutes", "0"),
+        ("source_unreachable_minutes", "0"),
     ],
 )
 def test_alarm_numbers_must_be_in_range(tmp_path: Path, key: str, bad: str) -> None:

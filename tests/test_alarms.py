@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import json
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from smoker_monitor.domain.alarms import (
-    NO_DEVICE,
     Alarm,
     AlarmKind,
     AlarmRules,
     evaluate,
     fresh_probes,
-    while_unreachable,
 )
 from smoker_monitor.domain.models import (
     AlarmLimit,
@@ -25,6 +23,7 @@ from smoker_monitor.domain.models import (
     Probe,
     Reading,
     Snapshot,
+    SourceHealth,
 )
 from smoker_monitor.sources.eti_cloud import to_snapshot
 
@@ -118,8 +117,8 @@ def test_pit_within_limits_is_fine() -> None:
 
 
 def test_no_gateway_means_no_pit_alarms() -> None:
-    """Only the missing-Gateway timeout, never a pit alarm."""
-    assert kinds(check(None)) == [AlarmKind.GATEWAY_TIMEOUT]
+    """Without a Gateway there's no pit to check ("no gateway found" is a source alarm)."""
+    assert check(None) == ()
 
 
 # ---------------------------------------------------------------- probes ---
@@ -243,12 +242,6 @@ def test_gateway_exactly_on_its_timeout_is_still_fresh() -> None:
     assert check(gateway(110.0, last_seen=NOW - timedelta(minutes=5))) == ()
 
 
-def test_missing_gateway_alarms() -> None:
-    """Fail-safe: no Gateway in the data at all counts as gone quiet."""
-    alarms = check(None)
-    assert alarms == (Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0),)
-
-
 def test_gateway_timeout_can_be_switched_off() -> None:
     rules = AlarmRules(gateway_timeout=False)
     assert check(gateway(110.0, last_seen=SIX_MINUTES_AGO), rules=rules) == ()
@@ -350,36 +343,108 @@ def test_alarm_kinds_match_config_setting_names() -> None:
         assert kind.value in settings or f"{kind.value}_pct" in settings, kind
 
 
-# ------------------------------------------------------ ETI unreachable ---
+# --------------------------------------------------------- whole sources ---
 
+ETI = SourceHealth(key="eti", name="ETI Cloud", expects_gateway=True)
 FAILING_SINCE = NOW - timedelta(minutes=6)
-OLD_DATA_ALARMS = (
-    Alarm(AlarmKind.GATEWAY_TIMEOUT, "G1", 6.0, 5.0),
-    Alarm(AlarmKind.PROBE_TIMEOUT, "P1", 6.0, 5.0),
-    Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10),
-)
+ETI_DOWN = replace(ETI, error="down", failing_since=FAILING_SINCE)
 
 
-def test_unreachable_drops_timeouts_and_adds_its_own_alarm() -> None:
-    alarms = while_unreachable(OLD_DATA_ALARMS, FAILING_SINCE, NOW, AlarmRules())
-    assert kinds(alarms) == [AlarmKind.PROBE_BATTERY, AlarmKind.ETI_UNREACHABLE]
-    assert alarms[-1] == Alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, 6.0, 5.0)
+def eti_gateway(last_seen: datetime = NOW) -> Gateway:
+    return replace(gateway(110.0, last_seen=last_seen), source="eti")
 
 
-def test_short_outage_only_drops_timeouts() -> None:
-    """A blip shorter than eti_unreachable_minutes makes no noise of its own."""
-    just_now = NOW - timedelta(minutes=5)  # exactly on the limit: not yet
-    alarms = while_unreachable(OLD_DATA_ALARMS, just_now, NOW, AlarmRules())
-    assert kinds(alarms) == [AlarmKind.PROBE_BATTERY]
+def eti_probe(last_seen: datetime = NOW, battery_pct: int = 100) -> Probe:
+    return replace(probe(60.0, last_seen=last_seen, battery_pct=battery_pct), source="eti")
+
+
+def check_sources(
+    *sources: SourceHealth,
+    gateways: tuple[Gateway, ...] = (),
+    probes: tuple[Probe, ...] = (),
+    rules: AlarmRules = ALL_ON,
+    live: set[str] | None = None,
+) -> tuple[Alarm, ...]:
+    """Run evaluate on a Snapshot that includes how each source is doing."""
+    snapshot = Snapshot(NOW, gateways, probes, sources)
+    return evaluate(snapshot, NOW, rules, live_probes=live)
+
+
+def test_working_source_with_its_gateway_is_fine() -> None:
+    assert check_sources(ETI, gateways=(eti_gateway(),)) == ()
+
+
+def test_missing_gateway_alarms() -> None:
+    """Fail-safe: ETI Cloud works but sends no Gateway, so counts as gone quiet."""
+    alarms = check_sources(ETI)
+    assert alarms == (Alarm(AlarmKind.GATEWAY_TIMEOUT, "eti", None, 5.0),)
+    assert alarms[0].about_source
+
+
+def test_another_brands_gateway_doesnt_count() -> None:
+    traeger_gateway = replace(eti_gateway(), source="traeger")
+    assert kinds(check_sources(ETI, gateways=(traeger_gateway,))) == [AlarmKind.GATEWAY_TIMEOUT]
+
+
+def test_source_without_gateways_never_misses_one() -> None:
+    """e.g. a grill that reports its own pit: no Gateway expected."""
+    grill = SourceHealth(key="grill", name="Grill", expects_gateway=False)
+    assert check_sources(grill) == ()
+
+
+def test_missing_gateway_alarm_can_be_switched_off() -> None:
+    assert check_sources(ETI, rules=AlarmRules(gateway_timeout=False)) == ()
+
+
+def test_unreachable_source_alarms_instead_of_timeouts() -> None:
+    """Old data while ETI Cloud is down: "Can't reach", not "Gateway silent"."""
+    alarms = check_sources(
+        ETI_DOWN,
+        gateways=(eti_gateway(FAILING_SINCE),),
+        probes=(eti_probe(FAILING_SINCE),),
+        live={"eti:P1"},
+    )
+    assert alarms == (Alarm(AlarmKind.SOURCE_UNREACHABLE, "eti", 6.0, 5.0),)
+    assert alarms[0].about_source
+
+
+def test_unreachable_source_with_no_data_doesnt_say_no_gateway() -> None:
+    alarms = check_sources(ETI_DOWN)
+    assert kinds(alarms) == [AlarmKind.SOURCE_UNREACHABLE]
+
+
+def test_fresh_data_still_alarms_while_unreachable() -> None:
+    """The last good data is still recent: its low battery still counts."""
+    alarms = check_sources(ETI_DOWN, gateways=(eti_gateway(),), probes=(eti_probe(battery_pct=5),))
+    assert kinds(alarms) == [AlarmKind.SOURCE_UNREACHABLE, AlarmKind.PROBE_BATTERY]
+
+
+def test_short_outage_makes_no_noise() -> None:
+    """A blip shorter than source_unreachable_minutes makes no noise of its own."""
+    just_now = replace(ETI_DOWN, failing_since=NOW - timedelta(minutes=5))  # on the limit
+    old = NOW - timedelta(minutes=6)
+    assert check_sources(just_now, gateways=(eti_gateway(old),)) == ()
 
 
 def test_unreachable_alarm_can_be_switched_off() -> None:
-    rules = AlarmRules(eti_unreachable=False)
-    alarms = while_unreachable(OLD_DATA_ALARMS, FAILING_SINCE, NOW, rules)
-    assert kinds(alarms) == [AlarmKind.PROBE_BATTERY]
+    rules = AlarmRules(source_unreachable=False)
+    assert check_sources(ETI_DOWN, gateways=(eti_gateway(FAILING_SINCE),), rules=rules) == ()
 
 
 def test_unreachable_uses_its_own_minutes() -> None:
-    rules = AlarmRules(eti_unreachable_minutes=10)
-    alarms = while_unreachable((), FAILING_SINCE, NOW, rules)
-    assert alarms == ()
+    rules = AlarmRules(source_unreachable_minutes=10)
+    assert check_sources(ETI_DOWN, rules=rules) == ()
+
+
+def test_one_source_down_doesnt_hide_anothers_timeouts() -> None:
+    other = SourceHealth(key="other", name="Other", expects_gateway=True)
+    quiet = replace(gateway(110.0, last_seen=FAILING_SINCE), source="other")
+    alarms = check_sources(ETI_DOWN, other, gateways=(quiet,))
+    assert alarms == (
+        Alarm(AlarmKind.SOURCE_UNREACHABLE, "eti", 6.0, 5.0),
+        Alarm(AlarmKind.GATEWAY_TIMEOUT, "other:G1", 6.0, 5.0),
+    )
+
+
+def test_device_alarms_are_not_about_a_source() -> None:
+    assert not Alarm(AlarmKind.GATEWAY_TIMEOUT, "eti:G1", 6.0, 5.0).about_source

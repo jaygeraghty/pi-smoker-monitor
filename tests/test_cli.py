@@ -48,10 +48,14 @@ class FakeSource:
     That capture is weeks old, so it always raises a "Gateway silent" alarm.
     """
 
+    key = "eti"
+    name = "ETI Cloud"
+    expects_gateway = True
     closed = False
 
     def __init__(self, settings: EtiCloudSettings) -> None:
         self.settings = settings
+        self.poll_seconds = settings.poll_seconds
         FakeSource.closed = False
 
     async def fetch(self) -> Snapshot:
@@ -75,6 +79,7 @@ class FreshSource(FakeSource):
             last_seen=now,
             pit=None,
             fan=None,
+            source="eti",
         )
         return Snapshot(taken_at=now, gateways=(gateway,), probes=())
 
@@ -185,7 +190,7 @@ class InterruptedMonitor:
     def __init__(self, **kwargs: object) -> None:
         InterruptedMonitor.built = kwargs
 
-    def run_forever(self, interval_seconds: float) -> None:
+    def run_forever(self) -> None:
         raise KeyboardInterrupt
 
 
@@ -208,7 +213,7 @@ def test_run_stops_cleanly_on_ctrl_c(
 
     out = capsys.readouterr().out
     assert code == 0
-    assert "Monitoring every 30 s" in out
+    assert "Monitoring ETI Cloud every 30 s" in out
     assert "Stopped." in out
     assert InterruptedMonitor.built["state_dir"] == state_dir
 

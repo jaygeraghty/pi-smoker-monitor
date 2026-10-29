@@ -18,17 +18,18 @@ How a temperature limit (a high or low alarm) is checked:
    the temperature has reached the limit: >= for high, <= for low.
 
 Timeouts:
-- Gateway: alarm for each one that hasn't reported within its timeout, or if
-  there are none at all.
+- Gateway: alarm for each one that hasn't reported within its timeout, and
+  "no gateway found" for a working source that should have one but sent none.
 - Probe: alarm only for probes that are part of this cook (`live_probes`: ones
   the Pi has seen reporting since it started watching) and have gone quiet.
   A probe that was never live, e.g. left in a drawer, is ignored.
 
 Batteries: alarm below the [alarms] percentage; 0 switches it off.
 
-Can't reach ETI Cloud: when fetching fails, the Pi can't tell a silent Gateway
-from a silent internet, so `while_unreachable` swaps the timeout alarms for a
-single "can't reach ETI Cloud" alarm once it has failed for long enough.
+Can't reach a source: when fetching from a source (e.g. ETI Cloud) fails, the
+Pi can't tell a silent Gateway from a silent internet, so that source's devices
+raise no timeout alarms. Instead, once it has failed for
+source_unreachable_minutes, one "can't reach {source}" alarm goes off.
 """
 
 from __future__ import annotations
@@ -39,9 +40,6 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 
 from smoker_monitor.domain.models import NO_ALARMS, AlarmLimit, AlarmSettings, Snapshot
-
-# Device name used for an alarm about a Gateway that isn't in the data at all.
-NO_DEVICE = ""
 
 
 @dataclass(frozen=True)
@@ -63,8 +61,8 @@ class AlarmRules:
     probe_timeout_minutes: int = 5  # ...for this many minutes
     gateway_battery_pct: int = 10  # alarm below this; 0 switches it off
     probe_battery_pct: int = 10  # alarm below this; 0 switches it off
-    eti_unreachable: bool = True  # the Pi can't get data from ETI Cloud...
-    eti_unreachable_minutes: int = 5  # ...for this many minutes
+    source_unreachable: bool = True  # the Pi can't get data from a source...
+    source_unreachable_minutes: int = 5  # ...for this many minutes
 
 
 class AlarmKind(StrEnum):
@@ -78,12 +76,7 @@ class AlarmKind(StrEnum):
     PROBE_TIMEOUT = "probe_timeout"
     GATEWAY_BATTERY = "gateway_battery"  # set by gateway_battery_pct
     PROBE_BATTERY = "probe_battery"  # set by probe_battery_pct
-    ETI_UNREACHABLE = "eti_unreachable"  # the Pi can't fetch from ETI Cloud
-
-
-# Alarms that judge "has this device gone quiet?". They can't be judged while
-# ETI Cloud itself can't be reached.
-TIMEOUT_KINDS = frozenset({AlarmKind.GATEWAY_TIMEOUT, AlarmKind.PROBE_TIMEOUT})
+    SOURCE_UNREACHABLE = "source_unreachable"  # the Pi can't fetch from a source
 
 
 @dataclass(frozen=True)
@@ -97,14 +90,21 @@ class Alarm:
     `value` and `limit` depend on the kind:
     - temperature alarms: °C now, and the limit it crossed (None if unreadable)
     - timeouts: minutes since the device last reported, and the timeout
-      (value is None if the Gateway is missing altogether)
+      (value is None for "no gateway found"; device is then the source key)
+    - source unreachable: minutes it has been failing, and the limit
     - batteries: percent now, and the percentage it fell below
     """
 
     kind: AlarmKind
-    device: str  # serial of the Gateway or probe (NO_DEVICE if missing)
+    device: str  # id of the Gateway or probe (e.g. "eti:G1"), or a source key ("eti")
     value: float | None
     limit: float | None
+
+    @property
+    def about_source(self) -> bool:
+        """True if this is about a whole source ("eti"), not one device."""
+        no_gateway = self.kind is AlarmKind.GATEWAY_TIMEOUT and self.value is None
+        return no_gateway or self.kind is AlarmKind.SOURCE_UNREACHABLE
 
 
 def evaluate(
@@ -116,9 +116,9 @@ def evaluate(
 ) -> tuple[Alarm, ...]:
     """Return every alarm that should be going off right now (empty if all is well).
 
-    `custom` holds limits set on the Pi, keyed by device serial; each side (high
+    `custom` holds limits set on the Pi, keyed by device id; each side (high
     or low) that is set replaces ETI's for that device. `live_probes` holds the
-    serials of probes seen reporting during this cook (see `fresh_probes`); only
+    ids of probes seen reporting during this cook (see `fresh_probes`); only
     those can raise a "gone quiet" alarm.
     """
     custom = custom or {}
@@ -127,12 +127,14 @@ def evaluate(
     probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     found: list[Alarm | None] = []
 
-    if not snapshot.gateways and rules.gateway_timeout:
-        found.append(Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, minutes(gateway_limit)))
+    # A failing source's devices can't be seen, so their "gone quiet" alarms
+    # can't be judged; its own "can't reach" alarm stands in for them.
+    failing = {s.key for s in snapshot.sources if s.failing_since is not None}
+    found.extend(source_alarms(snapshot, now, rules, failing))
 
     for gateway in snapshot.gateways:
         if not is_fresh(gateway.last_seen, now, gateway_limit):
-            if rules.gateway_timeout:
+            if rules.gateway_timeout and gateway.source not in failing:
                 found.append(
                     timeout_alarm(
                         AlarmKind.GATEWAY_TIMEOUT, gateway.id, gateway.last_seen, now, gateway_limit
@@ -160,7 +162,7 @@ def evaluate(
 
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
-            if rules.probe_timeout and probe.id in live_probes:
+            if rules.probe_timeout and probe.id in live_probes and probe.source not in failing:
                 found.append(
                     timeout_alarm(
                         AlarmKind.PROBE_TIMEOUT, probe.id, probe.last_seen, now, probe_limit
@@ -187,7 +189,7 @@ def evaluate(
 
 
 def fresh_probes(snapshot: Snapshot, now: datetime, rules: AlarmRules) -> frozenset[str]:
-    """Serials of the probes reporting right now (within the probe timeout).
+    """Ids of the probes reporting right now (within the probe timeout).
 
     The service adds these to its `live_probes` set every poll, so a probe that
     was ever fresh during the cook is remembered, and can then raise a "gone
@@ -197,22 +199,39 @@ def fresh_probes(snapshot: Snapshot, now: datetime, rules: AlarmRules) -> frozen
     return frozenset(p.id for p in snapshot.probes if is_fresh(p.last_seen, now, limit))
 
 
-def while_unreachable(
-    alarms: tuple[Alarm, ...], failing_since: datetime, now: datetime, rules: AlarmRules
-) -> tuple[Alarm, ...]:
-    """The alarms to use while fetching from ETI Cloud keeps failing.
+def source_alarms(
+    snapshot: Snapshot, now: datetime, rules: AlarmRules, failing: Set[str]
+) -> list[Alarm]:
+    """Alarms about whole sources rather than single devices.
 
-    `alarms` were evaluated on the last good data. Its timeout alarms are
-    dropped (we can't see the devices, so we don't know if they are quiet) and,
-    once fetching has failed for eti_unreachable_minutes, a "can't reach ETI
-    Cloud" alarm is added. `failing_since` is the time of the first failed
-    fetch in a row.
+    - "Can't reach {source}": its fetches have failed for source_unreachable_minutes.
+    - "No gateway found from {source}": it's working, should have a Gateway, and
+      reported none.
     """
-    kept = tuple(alarm for alarm in alarms if alarm.kind not in TIMEOUT_KINDS)
-    limit = timedelta(minutes=rules.eti_unreachable_minutes)
-    if not rules.eti_unreachable or is_fresh(failing_since, now, limit):
-        return kept
-    return (*kept, timeout_alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, failing_since, now, limit))
+    found: list[Alarm] = []
+    unreachable_limit = timedelta(minutes=rules.source_unreachable_minutes)
+    gateway_limit = timedelta(minutes=rules.gateway_timeout_minutes)
+    for source in snapshot.sources:
+        if source.failing_since is not None:
+            if rules.source_unreachable and not is_fresh(
+                source.failing_since, now, unreachable_limit
+            ):
+                found.append(
+                    timeout_alarm(
+                        AlarmKind.SOURCE_UNREACHABLE,
+                        source.key,
+                        source.failing_since,
+                        now,
+                        unreachable_limit,
+                    )
+                )
+        elif (
+            rules.gateway_timeout
+            and source.expects_gateway
+            and not any(g.source == source.key for g in snapshot.gateways)
+        ):
+            found.append(Alarm(AlarmKind.GATEWAY_TIMEOUT, source.key, None, minutes(gateway_limit)))
+    return found
 
 
 # ---------------------------------------------------------------- checks ---

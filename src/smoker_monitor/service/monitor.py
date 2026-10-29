@@ -1,21 +1,24 @@
 """The monitor service behind `smoker run`: the loop that wakes you up.
 
-Every poll (config: [polling] interval_seconds):
-1. fetch a Snapshot from the source (ETI Cloud)
-2. remember which probes are live this cook
-3. evaluate() what's wrong right now
-4. step() the alarm memory: what should be ringing
-5. write the status file for screens
-6. tell the notifier (ring or stop)
+It watches any number of sources (brands, e.g. ETI Cloud), each fetched on
+its own schedule (its poll_seconds). Every poll:
+1. fetch a Snapshot from each source that's due, all at once
+2. combine every source's latest Snapshot into one
+3. remember which probes are live this cook
+4. evaluate() what's wrong right now
+5. step() the alarm memory: what should be ringing
+6. write the status file for screens
+7. tell the notifier (ring or stop)
 
 Between polls it checks for a silence request every second, so pressing
 silence takes effect straight away rather than at the next poll.
 
-If a fetch fails (no internet, ETI Cloud down), the last good Snapshot is used
-again (or an empty one if there has never been a good fetch). While fetching
-keeps failing, the "device gone quiet" alarms are switched off, because the Pi
-can't tell a quiet Gateway from a quiet internet. Instead, once it has failed
-for [alarms] eti_unreachable_minutes, the "Can't reach ETI Cloud" alarm rings.
+If a source's fetch fails (no internet, ETI Cloud down), its last good
+Snapshot is used again (or nothing, if it has never worked). While it keeps
+failing, its devices' "gone quiet" alarms are off, because the Pi can't tell
+a quiet Gateway from a quiet internet. Instead, once it has failed for
+[alarms] source_unreachable_minutes, "Can't reach {source}" rings. One
+source failing never stops the others being watched.
 
 Silence requests are a file (state/silence) so that anything can make one:
 the `smoker silence` command now, the screen's button later.
@@ -25,22 +28,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from smoker_monitor.domain.alarm_state import AlarmState, silence_all, step
-from smoker_monitor.domain.alarms import (
-    AlarmRules,
-    evaluate,
-    fresh_probes,
-    is_fresh,
-    while_unreachable,
-)
-from smoker_monitor.domain.models import Snapshot
+from smoker_monitor.domain.alarms import AlarmRules, evaluate, fresh_probes, is_fresh
+from smoker_monitor.domain.models import Snapshot, SourceHealth
 from smoker_monitor.domain.names import gateway_name, probe_names
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
+from smoker_monitor.service.combine import combine
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
 from smoker_monitor.sources.base import Source, SourceError
 
@@ -50,6 +49,9 @@ SILENCE_FILE = "silence"
 
 # How often to check for a silence request between polls.
 SILENCE_CHECK_SECONDS = 1.0
+
+# The shortest wait between polls, however the sources' schedules line up.
+MIN_WAIT_SECONDS = 1.0
 
 
 def utc_now() -> datetime:
@@ -62,19 +64,45 @@ def request_silence(state_dir: Path) -> None:
     (state_dir / SILENCE_FILE).touch()
 
 
+@dataclass
+class SourceState:
+    """What the monitor remembers about one source between polls."""
+
+    source: Source
+    last_good: Snapshot | None = None  # its last good Snapshot, if any
+    error: str | None = None  # why its last fetch failed (None if it worked)
+    failing_since: datetime | None = None  # first failed fetch in a row
+    next_due: datetime | None = None  # when to fetch next (None: straight away)
+
+    def is_due(self, now: datetime) -> bool:
+        return self.next_due is None or self.next_due <= now
+
+    def health(self) -> SourceHealth:
+        return SourceHealth(
+            key=self.source.key,
+            name=self.source.name,
+            expects_gateway=self.source.expects_gateway,
+            error=self.error,
+            failing_since=self.failing_since,
+        )
+
+
 class Monitor:
     """Runs the poll loop. Everything it talks to is passed in, so tests can fake it."""
 
     def __init__(
         self,
-        source: Source,
+        sources: Sequence[Source],
         rules: AlarmRules,
         notifier: Notifier,
         state_dir: Path,
         clock: Callable[[], datetime] = utc_now,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        self.source = source
+        keys = [source.key for source in sources]
+        if len(set(keys)) != len(keys):
+            raise ValueError(f"Two sources share a key: {keys}")
+        self.states = [SourceState(source) for source in sources]
         self.rules = rules
         self.notifier = notifier
         self.state_dir = state_dir
@@ -83,11 +111,9 @@ class Monitor:
 
         self.state = AlarmState()
         self.live_probes: set[str] = set()
-        self.snapshot: Snapshot | None = None  # the last good one
-        self.fetch_error: str | None = None
-        self.failing_since: datetime | None = None  # first failed fetch in a row
+        self.snapshot: Snapshot | None = None  # the latest combined one
 
-    async def run_forever(self, interval_seconds: float) -> None:
+    async def run_forever(self) -> None:
         """Poll, then wait (watching for silence), forever. Stop with Ctrl+C."""
         # A silence request left over from before we started is stale.
         self._take_silence_request()
@@ -98,25 +124,36 @@ class Monitor:
                 except Exception:
                     # A bug must not kill the monitor: log it and keep polling.
                     log.exception("Poll failed unexpectedly; carrying on")
-                await self.wait_for_next_poll(interval_seconds)
+                await self.wait_for_next_poll(self.seconds_until_due())
         finally:
-            # Ctrl+C or a stop: close the connection to ETI Cloud cleanly.
-            await self.source.close()
+            # Ctrl+C or a stop: close every source's connection cleanly.
+            for state in self.states:
+                await state.source.close()
 
     async def poll_once(self) -> AlarmState:
-        """Do one full poll and return the new alarm state."""
+        """Fetch from every source that's due, then check alarms. Returns the new alarm state."""
         now = self.clock()
-        snapshot = await self._fetch(now)
+        due = [state for state in self.states if state.is_due(now)]
+        await asyncio.gather(*(self._fetch(state, now) for state in due))
 
+        snapshot = combine(now, [(state.health(), state.last_good) for state in self.states])
+        self.snapshot = snapshot
         self.live_probes |= fresh_probes(snapshot, now, self.rules)
         alarms = evaluate(snapshot, now, self.rules, live_probes=self.live_probes)
-        if self.failing_since is not None:
-            alarms = while_unreachable(alarms, self.failing_since, now, self.rules)
         self.state = step(self.state, alarms, now)
 
         self._publish(snapshot, now)
-        log.info("%s", summary(snapshot, self.state, self.fetch_error, now, self.rules))
+        log.info("%s", summary(snapshot, self.state, now, self.rules))
         return self.state
+
+    def seconds_until_due(self) -> float:
+        """How long until the next source is due (at least MIN_WAIT_SECONDS)."""
+        now = self.clock()
+        waits = [
+            (state.next_due - now).total_seconds() if state.next_due is not None else 0.0
+            for state in self.states
+        ]
+        return max(MIN_WAIT_SECONDS, min(waits, default=MIN_WAIT_SECONDS))
 
     async def wait_for_next_poll(self, interval_seconds: float) -> None:
         """Sleep until the next poll, acting on silence requests as they arrive."""
@@ -139,27 +176,35 @@ class Monitor:
 
     # ------------------------------------------------------------ helpers ---
 
-    async def _fetch(self, now: datetime) -> Snapshot:
-        """The latest Snapshot, or the last good one if this fetch fails."""
+    async def _fetch(self, state: SourceState, now: datetime) -> None:
+        """Fetch from one source, remembering the result or why it failed.
+
+        Never raises: a broken source (even a bug in it) is just a failing
+        source, so it can't stop the others being watched.
+        """
+        source = state.source
+        state.next_due = now + timedelta(seconds=source.poll_seconds)
         try:
-            self.snapshot = await self.source.fetch()
-            self.fetch_error = None
-            self.failing_since = None
+            state.last_good = await source.fetch()
         except SourceError as e:
-            self.fetch_error = str(e)
-            if self.failing_since is None:
-                self.failing_since = now
-            log.warning("Fetch failed, using the last good data: %s", e)
-        if self.snapshot is None:
-            # Never had any data: an empty Snapshot (no Gateway).
-            return Snapshot(taken_at=now, gateways=(), probes=())
-        return self.snapshot
+            state.error = str(e)
+            log.warning("%s: fetch failed, using its last good data: %s", source.name, e)
+        except Exception:
+            # Not the source's message: it could hold anything, even a password.
+            state.error = f"{source.name} failed unexpectedly (see the log)"
+            log.exception("%s: fetch failed unexpectedly", source.name)
+        else:
+            state.error = None
+            state.failing_since = None
+            return
+        if state.failing_since is None:
+            state.failing_since = now
 
     def _publish(self, snapshot: Snapshot, now: datetime) -> None:
         """Write the status file and tell the notifier."""
         write_status(
             self.state_dir / STATUS_FILE,
-            build_status(snapshot, self.state, now, self.rules, self.fetch_error),
+            build_status(snapshot, self.state, now, self.rules),
         )
         messages = [describe_alarm(t.alarm, snapshot) for t in self.state.ringing]
         self.notifier.update(self.state, messages)
@@ -173,13 +218,7 @@ class Monitor:
         return True
 
 
-def summary(
-    snapshot: Snapshot,
-    state: AlarmState,
-    fetch_error: str | None,
-    now: datetime,
-    rules: AlarmRules,
-) -> str:
+def summary(snapshot: Snapshot, state: AlarmState, now: datetime, rules: AlarmRules) -> str:
     """A one-line log entry, e.g. 'pit 110.0°C | white probe 68.2°C | 1 ringing, 0 silenced'.
 
     A device that hasn't reported within its timeout shows as 'stale' rather
@@ -202,8 +241,9 @@ def summary(
         else:
             parts.append(f"{names[probe.id]} {format_reading(probe.core_celsius())}")
     parts.append(f"{len(state.ringing)} ringing, {len(state.silenced)} silenced")
-    if fetch_error is not None:
-        parts.append("ETI unreachable, using last data")
+    for source in snapshot.sources:
+        if source.error is not None:
+            parts.append(f"{source.name} unreachable, using last data")
     return " | ".join(parts)
 
 

@@ -81,8 +81,8 @@ def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
         case AlarmKind.PROBE_LOW:
             return f"{name} too cold: {format_temp(value)} (limit {format_temp(limit)})"
         case AlarmKind.GATEWAY_TIMEOUT:
-            if value is None:
-                return "No RFX Gateway found"
+            if value is None:  # device is the source's key
+                return f"No gateway found from {snapshot.source_name(alarm.device)}"
             return f"Gateway silent for {format_minutes(value)} (limit {format_minutes(limit)})"
         case AlarmKind.PROBE_TIMEOUT:
             return f"{name} silent for {format_minutes(value)} (limit {format_minutes(limit)})"
@@ -90,9 +90,9 @@ def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
             return f"Gateway battery low: {format_percent(value)} (below {format_percent(limit)})"
         case AlarmKind.PROBE_BATTERY:
             return f"{name} battery low: {format_percent(value)} (below {format_percent(limit)})"
-        case AlarmKind.ETI_UNREACHABLE:
+        case AlarmKind.SOURCE_UNREACHABLE:  # device is the source's key
             return (
-                f"Can't reach ETI Cloud for {format_minutes(value)} "
+                f"Can't reach {snapshot.source_name(alarm.device)} for {format_minutes(value)} "
                 f"(limit {format_minutes(limit)}): readings are out of date"
             )
         case _:

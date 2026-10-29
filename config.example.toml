@@ -9,6 +9,8 @@ password = "change-me"
 api_key = "AIzaSyBD4snlT2LllO4k0NywX5qYjJ7M7WfU4_I"
 app_id = "1:701566661301:web:7a9bc711c05985ead144fc"
 referer = "https://cloud.etiltd.com/"
+# poll_seconds = 30           # optional: how often to fetch from ETI Cloud
+#                             # (default: [polling] interval_seconds)
 
 [traeger_mqtt]
 # Only required if you wish to connect a traeger grill to the app. can be removed if not needed
@@ -18,7 +20,7 @@ password = "change-me"
 client_id = "4id473dsrcq4kevlgrikukqn2a"
 
 [polling]
-interval_seconds = 30
+interval_seconds = 30         # how often to fetch, unless a brand sets poll_seconds
 
 [display]
 units = "C"   # "C" or "F" — ETI Cloud stores °F; we convert for display
@@ -35,8 +37,8 @@ probe_timeout = true          # a probe in use has gone quiet...
 probe_timeout_minutes = 5     # ...for this many minutes
 gateway_battery_pct = 10      # alarm below this; 0 switches it off
 probe_battery_pct = 10        # alarm below this; 0 switches it off
-eti_unreachable = true        # the Pi can't get data from ETI Cloud...
-eti_unreachable_minutes = 5   # ...for this many minutes
+source_unreachable = true     # the Pi can't get data from a source (e.g. ETI Cloud)...
+source_unreachable_minutes = 5  # ...for this many minutes
 
 [notifiers.sound]
 enabled = true

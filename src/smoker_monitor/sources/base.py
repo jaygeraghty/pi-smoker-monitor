@@ -1,11 +1,20 @@
 """The `Source` interface every data source implements.
 
-A source is anything that can produce a Snapshot of the cook: ETI Cloud today,
-a fake source in tests, and later the DIY pit-controller Pi. The rest of the
-app only depends on this interface, never on a particular source.
+A source is one brand's way of reading the cook: ETI Cloud today, Traeger
+later, and fake sources in tests. Each one turns its brand's data into the
+shared parts (Gateway, Probe, ...) and returns them as a Snapshot. The monitor
+fetches every source and combines their Snapshots into one, so the rest of the
+app never depends on a particular brand.
+
+Adding a brand means: a class with the attributes and methods below, its
+settings in config.py, and one line in sources/factory.py.
+
+Sources are read-only by design: they fetch readings and never send commands
+to a device.
 
 `Source` is a typing.Protocol, Python's equivalent of a C# interface: any class
-with a matching `fetch` method counts as a Source, without inheriting from it.
+with matching attributes and methods counts as a Source, without inheriting
+from it.
 """
 
 from __future__ import annotations
@@ -26,9 +35,15 @@ class SourceError(Exception):
 class Source(Protocol):
     """Something that can fetch the current state of the cook."""
 
-    async def fetch(self) -> Snapshot:
-        """Return a Snapshot of everything known right now.
+    key: str  # short and unique, e.g. "eti": prefixes its devices' ids ("eti:G1")
+    name: str  # shown on screens and in alarms, e.g. "ETI Cloud"
+    poll_seconds: int  # how often to fetch from it
+    expects_gateway: bool  # True if "No gateway found" should fire when it reports none
 
+    async def fetch(self) -> Snapshot:
+        """Return a Snapshot of everything this source knows right now.
+
+        Every device in it should have `source` set to this source's `key`.
         Raises SourceError if the data can't be fetched.
         """
         ...
