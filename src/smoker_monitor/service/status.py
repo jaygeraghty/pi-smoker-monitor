@@ -67,8 +67,8 @@ def limit_c(limit: AlarmLimit | None) -> float | None:
 
 def alarm_status(tracked: TrackedAlarm, snapshot: Snapshot) -> dict[str, Any]:
     """One alarm, with its plain-English message."""
-    device = None if tracked.alarm.device == NO_DEVICE else eti_id(tracked.alarm.device)
-    return {
+        device = None if tracked.alarm.device == NO_DEVICE else tracked.alarm.device
+        return {
         "kind": tracked.alarm.kind.value,
         "device": device,  # the id of the pit or probe it's about (None: no Gateway)
         "status": tracked.status.value,  # pending, ringing or silenced
@@ -100,7 +100,7 @@ def build_status(
         "alarms": [alarm_status(tracked, snapshot) for tracked in state.tracked.values()],
         "pits": [] if snapshot.gateway is None else [pit_status(snapshot.gateway, now, rules)],
         "probes": [
-            probe_status(probe, names[probe.serial], now, rules) for probe in snapshot.probes
+            probe_status(probe, names[probe.id], now, rules) for probe in snapshot.probes
         ],
     }
 
@@ -114,11 +114,14 @@ def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, 
     billows = gateway.fan
     fan: str | None = None
     set_c: float | None = None
+    fan_output_pct: int | None = None
     if billows is not None and not billows.connected:
         fan = "not connected"
     elif billows is not None:
         fan = format_fan_activity(billows)
         set_c = billows.set_temp_celsius
+        fan_output_pct = billows.output_pct
+
 
     details = [
         {"label": "Battery", "value": format_percent(gateway.battery_pct)},
@@ -126,7 +129,7 @@ def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, 
     ]
 
     return {
-        "id": eti_id(gateway.serial),
+        "id": eti_id(gateway.id),
         "source": ETI_SOURCE,
         "kind": "gateway",  # a hub carrying a pit probe; later also "grill" (Traeger)
         "name": gateway_name(gateway),
@@ -137,6 +140,7 @@ def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, 
         "high_c": limit_c(gateway.pit_alarms.high),
         "low_c": limit_c(gateway.pit_alarms.low),
         "fan": fan,
+        "fan_output_pct": fan_output_pct,
         "details": details,
     }
 
@@ -146,7 +150,7 @@ def probe_status(probe: Probe, name: str, now: datetime, rules: AlarmRules) -> d
     fresh = is_fresh(probe.last_seen, now, timedelta(minutes=rules.probe_timeout_minutes))
 
     return {
-        "id": eti_id(probe.serial),
+        "id": eti_id(probe.id),
         "source": ETI_SOURCE,
         "name": name,
         "rings": [ring.value for ring in probe.rings],  # only the app's colours

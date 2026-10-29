@@ -134,55 +134,55 @@ def evaluate(
         if rules.gateway_timeout:
             found.append(
                 timeout_alarm(
-                    AlarmKind.GATEWAY_TIMEOUT, gateway.serial, gateway.last_seen, now, gateway_limit
+                    AlarmKind.GATEWAY_TIMEOUT, gateway.id, gateway.last_seen, now, gateway_limit
                 )
             )
     else:
         found.append(
             check_battery(
                 AlarmKind.GATEWAY_BATTERY,
-                gateway.serial,
+                gateway.id,
                 gateway.battery_pct,
                 rules.gateway_battery_pct,
             )
         )
         pit = gateway.get_pit_temp()
         eti = gateway.pit_alarms
-        mine = custom.get(gateway.serial, NO_ALARMS)
+        mine = custom.get(gateway.id, NO_ALARMS)
         if rules.pit_high:
             found.append(
-                check_limit(AlarmKind.PIT_HIGH, gateway.serial, pit, eti.high, mine.high, True)
+                check_limit(AlarmKind.PIT_HIGH, gateway.id, pit, eti.high, mine.high, True)
             )
         if rules.pit_low:
             found.append(
-                check_limit(AlarmKind.PIT_LOW, gateway.serial, pit, eti.low, mine.low, False)
+                check_limit(AlarmKind.PIT_LOW, gateway.id, pit, eti.low, mine.low, False)
             )
 
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
-            if rules.probe_timeout and probe.serial in live_probes:
+            if rules.probe_timeout and probe.id in live_probes:
                 found.append(
                     timeout_alarm(
-                        AlarmKind.PROBE_TIMEOUT, probe.serial, probe.last_seen, now, probe_limit
+                        AlarmKind.PROBE_TIMEOUT, probe.id, probe.last_seen, now, probe_limit
                     )
                 )
             continue
 
         found.append(
             check_battery(
-                AlarmKind.PROBE_BATTERY, probe.serial, probe.battery_pct, rules.probe_battery_pct
+                AlarmKind.PROBE_BATTERY, probe.id, probe.battery_pct, rules.probe_battery_pct
             )
         )
         core = probe.core_celsius()
         eti = probe.alarms
-        mine = custom.get(probe.serial, NO_ALARMS)
+        mine = custom.get(probe.id, NO_ALARMS)
         if rules.probe_high:
             found.append(
-                check_limit(AlarmKind.PROBE_HIGH, probe.serial, core, eti.high, mine.high, True)
+                check_limit(AlarmKind.PROBE_HIGH, probe.id, core, eti.high, mine.high, True)
             )
         if rules.probe_low:
             found.append(
-                check_limit(AlarmKind.PROBE_LOW, probe.serial, core, eti.low, mine.low, False)
+                check_limit(AlarmKind.PROBE_LOW, probe.id, core, eti.low, mine.low, False)
             )
 
     return tuple(alarm for alarm in found if alarm is not None)
@@ -196,7 +196,7 @@ def fresh_probes(snapshot: Snapshot, now: datetime, rules: AlarmRules) -> frozen
     quiet" alarm if it stops reporting.
     """
     limit = timedelta(minutes=rules.probe_timeout_minutes)
-    return frozenset(p.serial for p in snapshot.probes if is_fresh(p.last_seen, now, limit))
+    return frozenset(p.id for p in snapshot.probes if is_fresh(p.last_seen, now, limit))
 
 
 def while_unreachable(

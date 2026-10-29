@@ -111,7 +111,7 @@ def test_app_sets_pit_alarms_25f_either_side_of_target(
 def test_blowing_capture_raises_only_pit_too_cold(blowing: Snapshot) -> None:
     """The probes are hours old and weren't part of a cook, so they stay quiet."""
     alarms = evaluate(blowing, BLOWING_AT, AlarmRules())
-    assert alarms == (Alarm(AlarmKind.PIT_LOW, "GATEWAY-1", alarms[0].value, 285.0),)
+    assert alarms == (Alarm(AlarmKind.PIT_LOW, "eti:GATEWAY-1", alarms[0].value, 285.0),)
     assert alarms[0].value == pytest.approx(22.8, abs=0.05)
 
 

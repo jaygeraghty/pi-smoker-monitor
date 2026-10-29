@@ -64,6 +64,9 @@ from smoker_monitor.domain.models import (
 from smoker_monitor.domain.units import f_to_c
 from smoker_monitor.sources.base import SourceError
 
+
+# The short name stamped on every device from ETI Cloud, so ids are "eti:...".
+SOURCE_KEY = "eti"
 GATEWAY_NAME = "rfx gateway"
 PROBE_NAME = "rfx meat"
 
@@ -269,6 +272,7 @@ def to_gateway(device: dict[str, Any], channels: list[dict[str, Any]]) -> Gatewa
         fan=to_fan(device.get("fan")),
         pit_alarms=pit_alarms,
         name=clean_name(extra(device).get("sessionLabel")),
+        source=SOURCE_KEY,
     )
 
 
@@ -299,6 +303,7 @@ def to_probe(device: dict[str, Any], channels: list[dict[str, Any]]) -> Probe:
         name=clean_name(extra(device).get("sessionLabel"))
         or (clean_name(whole_probe[0].get("label")) if whole_probe else None),
         rings=to_rings(extra(device).get("ringColors")),
+        source=SOURCE_KEY,
     )
 
 

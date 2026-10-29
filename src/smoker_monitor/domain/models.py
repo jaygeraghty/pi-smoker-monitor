@@ -88,6 +88,13 @@ class Probe:
     alarms: AlarmSettings = NO_ALARMS
     name: str | None = None  # your name for it, e.g. "white probe" (already tidied)
     rings: tuple[RingColour, ...] = ()  # its ring colours, top to bottom (up to 3)
+    source: str = ""  # short name of the source that reported it, e.g. "eti"
+
+    @property
+    def id(self) -> str:
+        """Unique across all sources, e.g. "eti:PROBE-1" (just the serial if no source)."""
+        return f"{self.source}:{self.serial}" if self.source else self.serial
+
 
     def core_celsius(self) -> float | None:
         """Lowest sensor temperature (the coldest point in the meat), or None if no readings."""
@@ -118,6 +125,8 @@ class Fan:
     state: int | None  # the source's raw state code, kept for display (None if missing)
     connected: bool
     activity: FanActivity = FanActivity.UNKNOWN
+    output_pct: int | None = None  # how hard it's running, 0-100, if the source says
+
 
 
 @dataclass(frozen=True)
@@ -134,6 +143,14 @@ class Gateway:
     fan: Fan | None
     pit_alarms: AlarmSettings = NO_ALARMS
     name: str | None = None  # your name for it, if you've given one (already tidied)
+    source: str = ""  # short name of the source that reported it, e.g. "eti"
+
+    @property
+    def id(self) -> str:
+        """Unique across all sources, e.g. "eti:GATEWAY-1" (just the serial if no source)."""
+        return f"{self.source}:{self.serial}" if self.source else self.serial
+
+
 
     def get_pit_temp(self) -> float | None:
         """Get the temp of the pit probes readings"""
