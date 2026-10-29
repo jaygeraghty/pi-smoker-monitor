@@ -38,7 +38,7 @@ from smoker_monitor.domain.alarms import (
     while_unreachable,
 )
 from smoker_monitor.domain.models import Snapshot
-from smoker_monitor.domain.names import probe_names
+from smoker_monitor.domain.names import gateway_name, probe_names
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
@@ -152,7 +152,7 @@ class Monitor:
             log.warning("Fetch failed, using the last good data: %s", e)
         if self.snapshot is None:
             # Never had any data: an empty Snapshot (no Gateway).
-            return Snapshot(taken_at=now, gateway=None, probes=())
+            return Snapshot(taken_at=now, gateways=(), probes=())
         return self.snapshot
 
     def _publish(self, snapshot: Snapshot, now: datetime) -> None:
@@ -189,12 +189,13 @@ def summary(
     probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     names = probe_names(snapshot.probes)
     parts = []
-    gateway = snapshot.gateway
-    if gateway is not None:
+    for gateway in snapshot.gateways:
+        # With more than one gateway, say whose pit it is.
+        pit = "pit" if len(snapshot.gateways) == 1 else f"{gateway_name(gateway)} pit"
         if not is_fresh(gateway.last_seen, now, gateway_limit):
-            parts.append("pit stale")
+            parts.append(f"{pit} stale")
         else:
-            parts.append(f"pit {format_reading(gateway.get_pit_temp())}")
+            parts.append(f"{pit} {format_reading(gateway.get_pit_temp())}")
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
             parts.append(f"{names[probe.id]} stale")

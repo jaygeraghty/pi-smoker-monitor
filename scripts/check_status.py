@@ -62,7 +62,7 @@ def main() -> None:
         name="pink probe",
         rings=(RingColour.PINK,),
     )
-    snapshot = Snapshot(taken_at=now, gateway=gateway, probes=(cooking, in_the_drawer))
+    snapshot = Snapshot(taken_at=now, gateways=(gateway,), probes=(cooking, in_the_drawer))
 
     status = build_status(snapshot, AlarmState(), now, AlarmRules(), None)
     print(json.dumps(status, indent=2))

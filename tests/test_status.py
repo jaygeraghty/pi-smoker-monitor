@@ -59,7 +59,7 @@ PROBE = Probe(
     rings=(RingColour.WHITE,),
     source="eti",
 )
-SNAPSHOT = Snapshot(taken_at=NOW, gateway=GATEWAY, probes=(PROBE,))
+SNAPSHOT = Snapshot(taken_at=NOW, gateways=(GATEWAY,), probes=(PROBE,))
 PIT_HOT = Alarm(AlarmKind.PIT_HIGH, "eti:G1", 182.0, 170.0)
 
 
@@ -87,7 +87,7 @@ def pit(snapshot: Snapshot = SNAPSHOT) -> dict[str, Any]:
 
 def probe(item: Probe) -> dict[str, Any]:
     """The status of a single probe."""
-    [only] = status(Snapshot(NOW, GATEWAY, (item,)))["probes"]
+    [only] = status(Snapshot(NOW, (GATEWAY,), (item,)))["probes"]
     result: dict[str, Any] = only
     return result
 
@@ -134,12 +134,12 @@ def test_gateway_as_a_pit() -> None:
 
 
 def test_no_gateway_means_no_pits() -> None:
-    assert status(Snapshot(NOW, None, ()))["pits"] == []
+    assert status(Snapshot(NOW, (), ()))["pits"] == []
 
 
 def test_pit_without_a_fan() -> None:
     bare = Gateway("G1", None, None, None, NOW, None, None)
-    result = pit(Snapshot(NOW, bare, ()))
+    result = pit(Snapshot(NOW, (bare,), ()))
     assert result["fan"] is None
     assert result["set_c"] is None
     assert result["temp_c"] is None
@@ -154,7 +154,7 @@ def test_disconnected_fan_has_no_set_temperature() -> None:
     """The Billows remembers its last set temperature; it means nothing unplugged."""
     unplugged = Fan(set_temp_celsius=298.9, state=1, connected=False)
     gateway = Gateway("G1", None, 80, -55, NOW, Reading(23.0, NOW), unplugged)
-    result = pit(Snapshot(NOW, gateway, ()))
+    result = pit(Snapshot(NOW, (gateway,), ()))
     assert result["fan"] == "not connected"
     assert result["set_c"] is None
 
@@ -162,12 +162,12 @@ def test_disconnected_fan_has_no_set_temperature() -> None:
 def test_unknown_fan_state_is_shown_as_is() -> None:
     odd = Fan(set_temp_celsius=110.0, state=0, connected=True)
     gateway = Gateway("G1", None, 80, -55, NOW, Reading(110.0, NOW), odd)
-    assert pit(Snapshot(NOW, gateway, ()))["fan"] == "state 0 (UNKNOWN)"
+    assert pit(Snapshot(NOW, (gateway,), ()))["fan"] == "state 0 (UNKNOWN)"
 
 
 def test_stale_gateway_is_not_fresh() -> None:
     old = Gateway("G1", None, 80, -55, NOW - timedelta(minutes=6), None, None)
-    assert pit(Snapshot(NOW, old, ()))["fresh"] is False
+    assert pit(Snapshot(NOW, (old,), ()))["fresh"] is False
 
 
 # ------------------------------------------------------------------ probes ---
@@ -228,7 +228,7 @@ def test_ringing_alarm_points_at_its_device() -> None:
 def test_alarm_without_a_device() -> None:
     """'No RFX Gateway found' isn't about any one device."""
     missing = Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0)
-    [alarm] = status(Snapshot(NOW, None, ()), ringing(missing))["alarms"]
+    [alarm] = status(Snapshot(NOW, (), ()), ringing(missing))["alarms"]
     assert alarm["device"] is None
     assert alarm["message"] == "No RFX Gateway found"
 

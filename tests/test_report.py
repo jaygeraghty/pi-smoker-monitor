@@ -93,13 +93,13 @@ def test_idle_report_with_its_alarms_shows_gateway_silent() -> None:
 
 
 def test_no_alarms_means_no_alarm_block() -> None:
-    snapshot = Snapshot(taken_at=NOW, gateway=live_gateway(107.0, None), probes=())
+    snapshot = Snapshot(taken_at=NOW, gateways=(live_gateway(107.0, None),), probes=())
     assert "ALARM" not in format_snapshot(snapshot, NOW, ())
 
 
 def test_connected_fan_shows_set_temp_and_deviation() -> None:
     fan = Fan(set_temp_celsius=107.0, state=1, connected=True, activity=FanActivity.BLOWING)
-    snapshot = Snapshot(taken_at=NOW, gateway=live_gateway(110.0, fan), probes=())
+    snapshot = Snapshot(taken_at=NOW, gateways=(live_gateway(110.0, fan),), probes=())
     report = format_snapshot(snapshot, NOW)
     assert "Fan:   connected, set to 107.0°C, blowing" in report
     assert "+3.0°C from the set temperature" in report
@@ -120,9 +120,9 @@ def test_fan_activity_words(state: int | None, activity: FanActivity, words: str
 
 
 def test_missing_gateway_is_explained() -> None:
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=())
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=())
     report = format_snapshot(snapshot, NOW)
-    assert "No RFX Gateway found" in report
+    assert "No gateway found" in report
 
 
 def test_idle_report_shows_pit_alarms() -> None:
@@ -185,7 +185,7 @@ WHITE_PROBE = Probe(
     last_seen=NOW,
     sensors=(Reading(celsius=96.0, taken_at=NOW),),
 )
-WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
+WITH_PROBE = Snapshot(taken_at=NOW, gateways=(), probes=(WHITE_PROBE,))
 
 
 @pytest.mark.parametrize(
@@ -259,14 +259,14 @@ def alarming_probe(last_seen: datetime) -> Probe:
 
 
 def test_fresh_probe_shows_alarming() -> None:
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(NOW),))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(alarming_probe(NOW),))
     assert "Alarms:  high 20.0°C ALARMING" in format_snapshot(snapshot, NOW)
 
 
 def test_stale_probe_does_not_show_frozen_alarming() -> None:
     """Real case: kit switched off mid-alarm, ETI still says ALARMING hours later."""
     hours_ago = NOW - timedelta(hours=5)
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(hours_ago),))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(alarming_probe(hours_ago),))
     report = format_snapshot(snapshot, NOW)
     assert "Alarms:  high 20.0°C (no recent data)" in report
     assert "ALARMING" not in report
@@ -274,7 +274,7 @@ def test_stale_probe_does_not_show_frozen_alarming() -> None:
 
 def test_staleness_uses_configured_timeout() -> None:
     six_minutes_ago = NOW - timedelta(minutes=6)
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(six_minutes_ago),))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(alarming_probe(six_minutes_ago),))
     assert "ALARMING" not in format_snapshot(snapshot, NOW)  # default 5 min timeout
     relaxed = AlarmRules(probe_timeout_minutes=10)
     assert "ALARMING" in format_snapshot(snapshot, NOW, (), relaxed)

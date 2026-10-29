@@ -93,7 +93,7 @@ def build_status(
         "sound_on": state.sound_on,
         "sources": [{"name": ETI_SOURCE, "ok": fetch_error is None, "error": fetch_error}],
         "alarms": [alarm_status(tracked, snapshot) for tracked in state.tracked.values()],
-        "pits": [] if snapshot.gateway is None else [pit_status(snapshot.gateway, now, rules)],
+        "pits": [pit_status(gateway, now, rules) for gateway in snapshot.gateways],
         "probes": [probe_status(probe, names[probe.id], now, rules) for probe in snapshot.probes],
     }
 

@@ -57,6 +57,6 @@ def probe_names(probes: Iterable[Probe]) -> dict[str, str]:
 def device_names(snapshot: Snapshot) -> dict[str, str]:
     """Display names for every device in the Snapshot, keyed by serial."""
     names = probe_names(snapshot.probes)
-    if snapshot.gateway is not None:
-        names[snapshot.gateway.id] = gateway_name(snapshot.gateway)
+    for gateway in snapshot.gateways:
+        names[gateway.id] = gateway_name(gateway)
     return names

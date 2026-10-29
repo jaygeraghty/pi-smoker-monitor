@@ -76,7 +76,7 @@ class FreshSource(FakeSource):
             pit=None,
             fan=None,
         )
-        return Snapshot(taken_at=now, gateway=gateway, probes=())
+        return Snapshot(taken_at=now, gateways=(gateway,), probes=())
 
 
 class FailingSource(FakeSource):

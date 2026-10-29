@@ -91,7 +91,7 @@ def check(
     live: set[str] | None = None,
 ) -> tuple[Alarm, ...]:
     """Run evaluate on a Snapshot built from the given devices."""
-    snapshot = Snapshot(taken_at=NOW, gateway=g, probes=probes)
+    snapshot = Snapshot(taken_at=NOW, gateways=() if g is None else (g,), probes=probes)
     return evaluate(snapshot, NOW, rules, custom, live)
 
 
@@ -294,7 +294,7 @@ def test_probe_timeout_can_be_switched_off() -> None:
 def test_fresh_probes_are_the_ones_reporting_now() -> None:
     reporting = probe(70.0, serial="P1")
     in_drawer = probe(20.0, serial="P2", last_seen=NOW - timedelta(days=30))
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(reporting, in_drawer))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(reporting, in_drawer))
     assert fresh_probes(snapshot, NOW, AlarmRules()) == frozenset({"P1"})
 
 

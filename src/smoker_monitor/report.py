@@ -44,11 +44,13 @@ def format_snapshot(
         lines.extend(format_active_alarms(alarms, snapshot))
         lines.append("")
 
-    if snapshot.gateway is None:
-        lines.append("No RFX Gateway found on this ETI Cloud account.")
-    else:
-        fresh = is_fresh(snapshot.gateway.last_seen, now, gateway_limit)
-        lines.extend(format_gateway(snapshot.gateway, now, fresh))
+    if not snapshot.gateways:
+        lines.append("No gateway found.")
+    for number, gateway in enumerate(snapshot.gateways):
+        if number:
+            lines.append("")
+        fresh = is_fresh(gateway.last_seen, now, gateway_limit)
+        lines.extend(format_gateway(gateway, now, fresh))
 
     names = probe_names(snapshot.probes)
     for probe in snapshot.probes:

@@ -18,7 +18,8 @@ How a temperature limit (a high or low alarm) is checked:
    the temperature has reached the limit: >= for high, <= for low.
 
 Timeouts:
-- Gateway: alarm if it hasn't reported within its timeout, or is missing.
+- Gateway: alarm for each one that hasn't reported within its timeout, or if
+  there are none at all.
 - Probe: alarm only for probes that are part of this cook (`live_probes`: ones
   the Pi has seen reporting since it started watching) and have gone quiet.
   A probe that was never live, e.g. left in a drawer, is ignored.
@@ -126,18 +127,19 @@ def evaluate(
     probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     found: list[Alarm | None] = []
 
-    gateway = snapshot.gateway
-    if gateway is None:
-        if rules.gateway_timeout:
-            found.append(Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, minutes(gateway_limit)))
-    elif not is_fresh(gateway.last_seen, now, gateway_limit):
-        if rules.gateway_timeout:
-            found.append(
-                timeout_alarm(
-                    AlarmKind.GATEWAY_TIMEOUT, gateway.id, gateway.last_seen, now, gateway_limit
+    if not snapshot.gateways and rules.gateway_timeout:
+        found.append(Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, minutes(gateway_limit)))
+
+    for gateway in snapshot.gateways:
+        if not is_fresh(gateway.last_seen, now, gateway_limit):
+            if rules.gateway_timeout:
+                found.append(
+                    timeout_alarm(
+                        AlarmKind.GATEWAY_TIMEOUT, gateway.id, gateway.last_seen, now, gateway_limit
+                    )
                 )
-            )
-    else:
+            continue
+
         found.append(
             check_battery(
                 AlarmKind.GATEWAY_BATTERY,

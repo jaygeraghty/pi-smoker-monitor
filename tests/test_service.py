@@ -119,7 +119,7 @@ def probe(seen: datetime, core: float = 60.0) -> Probe:
 
 
 def snapshot(at: datetime, pit: float = 110.0, probes: tuple[Probe, ...] = ()) -> Snapshot:
-    return Snapshot(taken_at=at, gateway=gateway(at, pit), probes=probes)
+    return Snapshot(taken_at=at, gateways=(gateway(at, pit),), probes=probes)
 
 
 def make_monitor(
@@ -407,10 +407,9 @@ def test_summary_shows_stale_gateway() -> None:
 
 def test_summary_without_readings() -> None:
     fresh = snapshot(START, probes=(probe(START),))
-    assert fresh.gateway is not None
     no_pit = Snapshot(
         taken_at=START,
-        gateway=replace(fresh.gateway, pit=None),
+        gateways=(replace(fresh.gateways[0], pit=None),),
         probes=(replace(fresh.probes[0], sensors=()),),
     )
     line = summary(no_pit, AlarmState(), None, START, AlarmRules())

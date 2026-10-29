@@ -11,7 +11,7 @@ code, so they are easy to test.
 - FanActivity:   what the fan is doing (blowing, pulsing or unknown).
 - Fan:           the Billows fan: connected or not, set temperature, activity.
 - Gateway:       the RFX Gateway: pit (air) probe, fan, Wi-Fi and alarm settings.
-- Snapshot:      the Gateway and every probe, as seen at one poll.
+- Snapshot:      every Gateway and probe, as seen at one poll.
 
 Rules followed throughout:
 - Temperatures are always °C. Sources convert from °F before building these.
@@ -173,16 +173,12 @@ class Gateway:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """Everything known about the cook at one poll."""
+    """Everything known about the cook at one poll, from every source combined.
+
+    A source fills in only what it has: ETI gives its Gateway and probes; a
+    brand with no hub (e.g. Meater) gives just probes.
+    """
 
     taken_at: datetime
-    gateway: Gateway | None
+    gateways: tuple[Gateway, ...]
     probes: tuple[Probe, ...]
-
-    def is_stale(self, now: datetime, max_age: timedelta) -> bool:
-        """Takes a timedelta value which is checked against the last gateway report
-        Returns true if the last snapshot is stale, false if not
-        A missing gateway will be treated as stale"""
-        if self.gateway is None:
-            return True
-        return self.gateway.last_seen + max_age < now
