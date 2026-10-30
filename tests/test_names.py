@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 from smoker_monitor.domain.models import Gateway, Probe, RingColour, Snapshot
 from smoker_monitor.domain.names import (
     device_names,
-    gateway_name,
+    gateway_base_name,
+    gateway_names,
     probe_base_name,
     probe_names,
 )
@@ -24,8 +25,10 @@ def probe(
     return Probe(serial, label, 90, NOW, (), name=name, rings=rings)
 
 
-def gateway(name: str | None = None, label: str | None = "RFX GATEWAY") -> Gateway:
-    return Gateway("G1", label, 80, -50, NOW, None, None, name=name)
+def gateway(
+    name: str | None = None, label: str | None = "RFX GATEWAY", serial: str = "G1"
+) -> Gateway:
+    return Gateway(serial, label, 80, -50, NOW, None, None, name=name)
 
 
 # ------------------------------------------------------------ one probe ---
@@ -75,9 +78,19 @@ def test_same_custom_name_is_numbered_too() -> None:
 
 
 def test_gateway_names() -> None:
-    assert gateway_name(gateway()) == "RFX GATEWAY"
-    assert gateway_name(gateway(name="Big Green Egg")) == "Big Green Egg"
-    assert gateway_name(gateway(label=None)) == "Gateway"
+    assert gateway_base_name(gateway()) == "RFX GATEWAY"
+    assert gateway_base_name(gateway(name="Big Green Egg")) == "Big Green Egg"
+    assert gateway_base_name(gateway(label=None)) == "Gateway"
+
+
+def test_twin_gateways_are_numbered_in_id_order() -> None:
+    names = gateway_names([gateway(serial="G2"), gateway(serial="G1")])
+    assert names == {"G2": "RFX GATEWAY 2", "G1": "RFX GATEWAY 1"}
+
+
+def test_differently_named_gateways_are_not_numbered() -> None:
+    names = gateway_names([gateway(serial="G1"), gateway("Egg", serial="G2")])
+    assert names == {"G1": "RFX GATEWAY", "G2": "Egg"}
 
 
 def test_device_names_covers_everything() -> None:

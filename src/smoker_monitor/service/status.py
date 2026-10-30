@@ -37,7 +37,7 @@ from typing import Any
 from smoker_monitor.domain.alarm_state import AlarmState, TrackedAlarm
 from smoker_monitor.domain.alarms import AlarmRules, is_fresh
 from smoker_monitor.domain.models import AlarmLimit, Gateway, Probe, Snapshot
-from smoker_monitor.domain.names import gateway_name, probe_names
+from smoker_monitor.domain.names import gateway_names, probe_names
 from smoker_monitor.report import (
     describe_alarm,
     format_dbm,
@@ -47,7 +47,9 @@ from smoker_monitor.report import (
 
 STATUS_FILE = "status.json"
 
-# Bump this whenever the shape of the file changes, so screens can tell.
+# Bump this when a change could break a screen: a field removed or renamed, or
+# its meaning changed. Adding a field doesn't need a bump: screens ignore
+# fields they don't know.
 SCHEMA_VERSION = 2
 
 
@@ -89,6 +91,7 @@ def build_status(
     `rules` supplies the timeouts that decide whether each device is fresh.
     """
     names = probe_names(snapshot.probes)
+    hubs = gateway_names(snapshot.gateways)
     return {
         "schema": SCHEMA_VERSION,
         "updated_at": now.isoformat(),
@@ -99,7 +102,7 @@ def build_status(
         ],
         "alarms": [alarm_status(tracked, snapshot) for tracked in state.tracked.values()],
         "pits": [
-            pit_status(gateway, snapshot.source_name(gateway.source), now, rules)
+            pit_status(gateway, hubs[gateway.id], snapshot.source_name(gateway.source), now, rules)
             for gateway in snapshot.gateways
         ],
         "probes": [
@@ -109,8 +112,11 @@ def build_status(
     }
 
 
-def pit_status(gateway: Gateway, source: str, now: datetime, rules: AlarmRules) -> dict[str, Any]:
-    """A Gateway (and its fan, if any) as a pit. `source` is its source's name."""
+def pit_status(
+    gateway: Gateway, name: str, source: str, now: datetime, rules: AlarmRules
+) -> dict[str, Any]:
+    """A Gateway (and its fan, if any) as a pit. `name` is its display name (see
+    domain/names.py); `source` is its source's name."""
     fresh = is_fresh(gateway.last_seen, now, timedelta(minutes=rules.gateway_timeout_minutes))
 
     # What the fan is doing, and the temperature it's aiming for (only
@@ -135,7 +141,7 @@ def pit_status(gateway: Gateway, source: str, now: datetime, rules: AlarmRules) 
         "id": gateway.id,
         "source": source,
         "kind": "gateway",  # a hub carrying a pit probe; later also "grill" (Traeger)
-        "name": gateway_name(gateway),
+        "name": name,
         "fresh": fresh,
         "last_seen": gateway.last_seen.isoformat(),
         "temp_c": gateway.get_pit_temp(),
