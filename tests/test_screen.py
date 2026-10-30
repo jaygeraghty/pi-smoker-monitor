@@ -106,7 +106,7 @@ def test_every_kind_of_status_draws() -> None:
 
 
 def test_alarm_outlines() -> None:
-    alarms = [
+    alarms: list[dict[str, Any]] = [
         {"device": "eti:G1", "status": "ringing"},
         {"device": "eti:P1", "status": "silenced"},
         {"device": "eti:P1", "status": "ringing"},  # ringing wins
