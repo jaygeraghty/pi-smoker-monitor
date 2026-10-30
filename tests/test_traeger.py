@@ -52,7 +52,12 @@ COOKING: dict[str, Any] = {
             },
             {"type": "probe", "uuid": "p2", "con": 0, "probe": {"get_temp": 70}},
         ],
-    }
+        "ambient": 50,
+        "keepwarm": 0,
+        "smoke": 1,
+    },
+    "features": {"pellet_sensor_connected": 1},
+    "settings": {"rssi": -61},
 }
 
 
@@ -299,3 +304,30 @@ def test_older_probe_alarm_flag_is_read() -> None:
     status = {"units": 0, "probe": 96, "probe_set": 95, "probe_con": 1, "probe_alarm_fired": 1}
     [probe] = cooking_snapshot({"status": status}).probes
     assert probe.alarms.high is not None and probe.alarms.high.alarming
+
+
+# ----------------------------------------------------------------- extras ---
+
+
+def test_cooking_grill_extras() -> None:
+    [grill] = cooking_snapshot().grills
+    assert grill.ambient_celsius == 10.0  # 50 °F
+    assert grill.wifi_dbm == -61
+    assert grill.super_smoke and not grill.keep_warm
+
+
+def test_pellets_ignored_without_a_pellet_sensor() -> None:
+    """Without the sensor, pellet_level could read 0 and set off "pellets low"."""
+    no_sensor = {**COOKING, "features": {"pellet_sensor_connected": 0}}
+    [grill] = cooking_snapshot(no_sensor).grills
+    assert grill.pellet_pct is None
+    no_features = {"status": COOKING["status"]}
+    [grill] = cooking_snapshot(no_features).grills
+    assert grill.pellet_pct is None
+
+
+def test_real_capture_extras() -> None:
+    [grill] = real_capture().grills
+    assert grill.ambient_celsius == 18.0
+    assert grill.wifi_dbm == -78
+    assert not grill.keep_warm and not grill.super_smoke

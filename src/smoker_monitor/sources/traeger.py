@@ -188,7 +188,7 @@ def to_snapshot(
         status = message.payload.get("status")
         status = status if isinstance(status, dict) else {}
         seen = status_time(status, message.received_at)
-        found_grills.append(to_grill(info, status, seen))
+        found_grills.append(to_grill(info, message.payload, seen))
         probes.extend(to_probes(thing, status, seen))
     return Snapshot(
         taken_at=datetime.now(UTC), gateways=(), probes=tuple(probes), grills=tuple(found_grills)
@@ -210,8 +210,11 @@ def silent_grill(info: Mapping[str, Any], since: datetime) -> Grill:
     )
 
 
-def to_grill(info: Mapping[str, Any], status: Mapping[str, Any], seen: datetime) -> Grill:
-    """One grill from its status message."""
+def to_grill(info: Mapping[str, Any], payload: Mapping[str, Any], seen: datetime) -> Grill:
+    """One grill from its whole message ("status", plus "features" and "settings")."""
+    status, features, settings = (
+        section(payload, key) for key in ("status", "features", "settings")
+    )
     in_f = uses_fahrenheit(status)
     code = status.get("system_status")
     mode = GRILL_MODES.get(code, GrillMode.UNKNOWN) if isinstance(code, int) else GrillMode.UNKNOWN
@@ -223,7 +226,17 @@ def to_grill(info: Mapping[str, Any], status: Mapping[str, Any], seen: datetime)
         mode=mode,
         temp=Reading(to_celsius(status.get("grill"), in_f), seen),
         set_temp_celsius=to_target(status.get("set"), in_f),
-        pellet_pct=percent(status.get("pellet_level")),
+        # Only believed with a pellet sensor fitted: without one it may read
+        # 0, which would set off "pellets low" for no reason.
+        pellet_pct=(
+            percent(status.get("pellet_level"))
+            if features.get("pellet_sensor_connected") == 1
+            else None
+        ),
+        ambient_celsius=to_celsius(status.get("ambient"), in_f),
+        wifi_dbm=whole_number(settings.get("rssi")),
+        keep_warm=status.get("keepwarm") == 1,
+        super_smoke=status.get("smoke") == 1,
         name=friendly_name(info),
         source=SOURCE_KEY,
     )
@@ -304,6 +317,19 @@ def status_time(status: Mapping[str, Any], received_at: float) -> datetime:
     if 0 < stamp <= received_at + CLOCK_SLACK_SECONDS:
         return datetime.fromtimestamp(stamp, UTC)
     return datetime.fromtimestamp(received_at, UTC)
+
+
+def section(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    """One part of a message (e.g. "status"), or empty if it's missing or odd."""
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def whole_number(value: object) -> int | None:
+    """A whole number, or None if missing or not a number."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return int(value)
 
 
 def uses_fahrenheit(status: Mapping[str, Any]) -> bool:

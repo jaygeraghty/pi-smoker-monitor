@@ -214,6 +214,10 @@ class Grill:
     temp: Reading | None  # the grill (cooking chamber) temperature
     set_temp_celsius: float | None  # what it's set to, if anything
     pellet_pct: int | None = None  # pellets left, 0-100, if it has a sensor
+    ambient_celsius: float | None = None  # outside air temperature, if it says
+    wifi_dbm: int | None = None  # Wi-Fi signal strength, if it says
+    keep_warm: bool = False  # Keep Warm switched on
+    super_smoke: bool = False  # Super Smoke switched on
     name: str | None = None  # your name for it, if you've given one
     source: str = ""  # short name of the source that reported it, e.g. "traeger"
 
