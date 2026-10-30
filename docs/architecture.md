@@ -31,7 +31,7 @@ package; nothing imports `cli`.
 | --- | --- | --- |
 | `domain` | Snapshot, Probe, Pit, Fan, Reading; unit conversion; staleness | 1 |
 | `config` | Load and validate `config.toml` into typed settings | 1 |
-| `sources` | `Source` protocol; ETI Cloud adapter; fake/replay source | 1 |
+| `sources` | `Source` protocol; ETI Cloud and Traeger (read-only) adapters; factory. See [adding-a-brand.md](adding-a-brand.md) | 1 |
 | `cli` | `smoker snapshot`, `smoker run`, `smoker silence` | 1, 3 |
 | `domain.alarms`, `domain.alarm_state` | Alarm rules, and alarm memory (confirm, clear, silence) | 2 |
 | `notifiers` | Sound, Pushover, console behind one protocol | 3 |

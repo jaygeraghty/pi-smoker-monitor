@@ -25,7 +25,11 @@ connected, Gateway offline, probe battery low, a probe out of range.
   fan pulsing (state 2). The pit is inside its alarm limits, so nothing is
   alarming. Captured 2026-10-05 20:59 UTC.
 
-In both fan captures the app had moved the pit alarms to 25 °F above and below
+- `eti_fan_482f.json`: the same kit at 21:02 UTC, set to 482 °F (250 °C), fan
+  blowing, pit at 73.4 °F (sent as a number this time, not text). The app's
+  pit alarms are 507 °F and 457 °F, and the low one is alarming.
+
+In all three fan captures the app had moved the pit alarms to 25 °F above and below
 the set temperature.
 
 ## Traeger
