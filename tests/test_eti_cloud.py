@@ -31,6 +31,8 @@ from smoker_monitor.sources.eti_cloud import (
     to_alarm_limit,
     to_celsius,
     to_fan,
+    to_float,
+    to_int,
     to_rings,
     to_snapshot,
 )
@@ -655,3 +657,10 @@ def test_live_fetch_from_eti_cloud() -> None:
 
     snapshot = asyncio.run(fetch_and_close())
     assert len(snapshot.gateways) == 1
+
+
+@pytest.mark.parametrize("odd", ["NaN", "nan", "Infinity", "-inf", float("nan"), float("inf")])
+def test_non_finite_numbers_count_as_missing(odd: object) -> None:
+    """ "NaN" parses as a float, but int() of it would crash the poll."""
+    assert to_float(odd) is None
+    assert to_int(odd) is None

@@ -96,3 +96,10 @@ def test_differently_named_gateways_are_not_numbered() -> None:
 def test_device_names_covers_everything() -> None:
     snapshot = Snapshot(NOW, (gateway(),), (probe("P1", "brisket"),))
     assert device_names(snapshot) == {"G1": "RFX GATEWAY", "P1": "brisket"}
+
+
+def test_numbering_skips_names_already_in_use() -> None:
+    """You called one "brisket 1"; the two plain "brisket"s mustn't become another."""
+    names = probe_names([probe("P1", "brisket 1"), probe("P2", "brisket"), probe("P3", "brisket")])
+    assert names == {"P1": "brisket 1", "P2": "brisket 2", "P3": "brisket 3"}
+    assert len(set(names.values())) == 3

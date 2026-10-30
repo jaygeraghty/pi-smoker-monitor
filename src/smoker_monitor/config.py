@@ -84,6 +84,11 @@ def load_config(path: Path) -> Config:
         ) from None
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{path} is not valid TOML: {e}") from None
+    except UnicodeDecodeError:
+        raise ConfigError(f"{path} isn't a text file (it must be saved as UTF-8)") from None
+    except OSError as e:
+        # A folder instead of a file, no permission to read it, ...
+        raise ConfigError(f"Couldn't read {path}: {e.strerror or e}") from None
 
     interval = _get_int(data, "polling", "interval_seconds")
     if interval <= 0:

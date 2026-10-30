@@ -59,6 +59,18 @@ def test_example_config_is_valid() -> None:
     assert config.polling.interval_seconds > 0
 
 
+def test_folder_instead_of_file_fails_cleanly(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="Couldn't read"):
+        load_config(tmp_path)
+
+
+def test_non_text_file_fails_cleanly(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_bytes(b"\xff\xfe\x00binary")
+    with pytest.raises(ConfigError, match=r"text file|not valid TOML"):
+        load_config(path)
+
+
 def test_missing_file_explains_what_to_do(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match=r"config\.example\.toml"):
         load_config(tmp_path / "config.toml")
