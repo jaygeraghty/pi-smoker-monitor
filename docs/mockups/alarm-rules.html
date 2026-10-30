@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Smoker">
+<title>Alarm rules</title>
+<style>
+  /* ------------------------------------------------------------ tokens --- */
+  :root {
+    --bg: #f2f2f7;            /* iOS grouped background */
+    --card: #ffffff;
+    --text: #1c1c1e;
+    --text-2: #545458;        /* secondary text: 7.5:1 on white */
+    --separator: #c6c6c8;
+    --accent: #0a6cd6;        /* links and primary button: 4.9:1 on white */
+    --on: #1f8a3c;            /* switch on: 4.6:1 against white (non-text needs 3:1) */
+    --off-track: #8e8e93;     /* switch off outline: 3.3:1 on white */
+    --warn-bg: #fff4e0;
+    --warn-text: #7a4a00;     /* 7.6:1 on its background */
+    --danger: #c4231b;        /* 5.6:1 on white */
+    --error-text: #b3261e;
+    --focus: #0a6cd6;
+    --radius: 12px;
+    --tap: 44px;              /* Apple HIG minimum tap target */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --card: #1c1c1e;
+      --text: #f2f2f7;
+      --text-2: #aeaeb2;      /* 8.4:1 on the card */
+      --separator: #3a3a3c;
+      --accent: #5aa9ff;
+      --on: #32c759;
+      --off-track: #8e8e93;
+      --warn-bg: #3a2a0a;
+      --warn-text: #ffd28a;
+      --danger: #ff6961;
+      --error-text: #ff8a80;
+      --focus: #5aa9ff;
+    }
+  }
+
+  /* ------------------------------------------------------------- base --- */
+  * { box-sizing: border-box; }
+  html {
+    /* Follows the iPhone's Text Size setting (Dynamic Type) in Safari. */
+    font: -apple-system-body;
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1.35;
+    padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right))
+             calc(120px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 2.1rem; font-weight: 700; margin: 24px 0 4px; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-2); margin: 28px 16px 8px;
+  }
+  p { margin: 0; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* ------------------------------------------------------------ status --- */
+  .summary { color: var(--text-2); margin: 0 0 8px; }
+  .banner {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: var(--warn-bg); color: var(--warn-text);
+    border-radius: var(--radius); padding: 12px 14px; margin: 12px 0;
+    font-weight: 600;
+  }
+  .banner[hidden] { display: none; }
+  .banner .icon { flex: none; font-size: 1.15em; line-height: 1.2; }
+
+  /* ------------------------------------------------- grouped list rows --- */
+  .group { background: var(--card); border-radius: var(--radius); overflow: hidden; }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    min-height: var(--tap); padding: 11px 16px;
+    position: relative;
+  }
+  .row + .row::before, .sub::before {
+    content: ""; position: absolute; top: 0; left: 16px; right: 0;
+    border-top: 1px solid var(--separator);
+  }
+  .row .text { flex: 1; min-width: 0; }
+  .row label.name { display: block; font-weight: 500; }
+  .row .hint { color: var(--text-2); font-size: 0.88rem; margin-top: 2px; }
+  .footer { color: var(--text-2); font-size: 0.85rem; margin: 8px 16px 0; }
+
+  /* An alarm that's off: say so in words, not just with the switch. */
+  .state-off {
+    display: inline-block; margin-top: 4px; font-size: 0.82rem; font-weight: 600;
+    color: var(--warn-text); background: var(--warn-bg); border-radius: 6px; padding: 1px 7px;
+  }
+  .state-off[hidden] { display: none; }
+
+  /* --------------------------------------------------------- switches --- */
+  input[role="switch"] {
+    appearance: none; -webkit-appearance: none; margin: 0; flex: none;
+    width: 51px; height: 31px; border-radius: 31px; position: relative; cursor: pointer;
+    background: transparent; border: 2px solid var(--off-track);
+    transition: background .2s, border-color .2s;
+  }
+  input[role="switch"]::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 23px; height: 23px; border-radius: 50%; background: var(--off-track);
+    transition: transform .2s, background .2s;
+  }
+  input[role="switch"]:checked { background: var(--on); border-color: var(--on); }
+  input[role="switch"]:checked::after { transform: translateX(20px); background: #fff; }
+  /* The visible switch is 51 x 31; this widens what a finger can hit to 44 x 44+. */
+  .switch-hit { display: flex; align-items: center; justify-content: center;
+                min-width: var(--tap); min-height: var(--tap); }
+
+  /* --------------------------------------------------------- steppers --- */
+  .sub { position: relative; display: flex; align-items: center; gap: 12px;
+         padding: 8px 16px 12px 16px; }
+  .sub[hidden] { display: none; }
+  .sub .what { flex: 1; color: var(--text-2); }
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper button {
+    width: var(--tap); height: var(--tap); border-radius: 10px; border: 0;
+    background: var(--bg); color: var(--text); font-size: 1.4rem; line-height: 1;
+    cursor: pointer;
+  }
+  .stepper button:disabled { opacity: .4; cursor: default; }
+  .stepper input {
+    width: 4.2em; height: var(--tap); text-align: center; font: inherit; font-weight: 600;
+    color: var(--text); background: var(--card);
+    border: 1.5px solid var(--off-track); border-radius: 10px;
+  }
+  .stepper input[aria-invalid="true"] { border-color: var(--error-text); border-width: 2px; }
+  .unit { color: var(--text-2); min-width: 2.2em; }
+  .error { color: var(--error-text); font-size: 0.88rem; font-weight: 600;
+           padding: 0 16px 12px; display: flex; gap: 6px; }
+  .error[hidden] { display: none; }
+
+  /* -------------------------------------------------- segmented control --- */
+  .segmented { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 3px; }
+  .segmented label { position: relative; }
+  .segmented input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .segmented span {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 64px; min-height: 38px; border-radius: 8px; font-weight: 600;
+  }
+  .segmented input:checked + span { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .segmented input:focus-visible + span { outline: 3px solid var(--focus); }
+
+  .link-button {
+    background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer;
+    min-height: var(--tap); padding: 0 16px; margin-top: 20px;
+  }
+
+  /* ---------------------------------------------- save bar (thumb zone) --- */
+  .savebar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-top: 1px solid var(--separator);
+    padding: 12px max(16px, env(safe-area-inset-right))
+             calc(12px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  .savebar[hidden] { display: none; }
+  .savebar .inner { max-width: 640px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+  .savebar .changes { flex: 1; color: var(--text-2); font-size: 0.9rem; }
+  .btn {
+    min-height: 50px; padding: 0 20px; border-radius: 12px; border: 0; font: inherit;
+    font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--bg); color: var(--accent); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* ---------------------------------------------------- confirm sheet --- */
+  dialog {
+    border: 0; border-radius: 16px; padding: 0; width: min(92vw, 420px);
+    background: var(--card); color: var(--text);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog .body { padding: 22px 20px 8px; }
+  dialog h3 { margin: 0 0 8px; font-size: 1.2rem; }
+  dialog ul { margin: 10px 0 0; padding-left: 20px; }
+  dialog .actions { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 20px; }
+
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 20;
+    background: var(--text); color: var(--card); border-radius: 12px; padding: 12px 16px;
+    font-weight: 600; max-width: 90vw;
+  }
+  .toast[hidden] { display: none; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
+                     clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Alarm rules</h1>
+  <p class="summary" id="summary">Loading…</p>
+
+  <div class="banner" id="offBanner" role="status" hidden>
+    <span class="icon" aria-hidden="true">⚠︎</span>
+    <span id="offBannerText"></span>
+  </div>
+
+  <form id="form" novalidate>
+    <div id="sections"></div>
+
+    <h2 id="display-heading">Display</h2>
+    <div class="group" role="group" aria-labelledby="display-heading">
+      <div class="row">
+        <div class="text" id="units-label">
+          <span class="name" style="font-weight:500">Temperatures in</span>
+          <p class="hint">Changes this page and the screen. Alarms work the same either way.</p>
+        </div>
+        <div class="segmented" role="radiogroup" aria-labelledby="units-label">
+          <label><input type="radio" name="units" value="C" checked><span>°C</span></label>
+          <label><input type="radio" name="units" value="F"><span>°F</span></label>
+        </div>
+      </div>
+    </div>
+
+    <button type="button" class="link-button" id="resetButton">Reset all to recommended settings</button>
+  </form>
+</main>
+
+<div class="savebar" id="savebar" hidden>
+  <div class="inner">
+    <p class="changes" id="changeCount" aria-live="polite"></p>
+    <button type="button" class="btn btn-secondary" id="discardButton">Discard</button>
+    <button type="button" class="btn btn-primary" id="saveButton">Save</button>
+  </div>
+</div>
+
+<dialog id="confirm" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+  <div class="body">
+    <h3 id="confirmTitle"></h3>
+    <div id="confirmBody"></div>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-danger" id="confirmYes"></button>
+    <button type="button" class="btn btn-secondary" id="confirmNo" autofocus></button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+/* ===================================================================== *
+ * Alarm rules page. Mock-up: settings are kept in the page; the real one
+ * will GET and PUT /api/settings on the Pi. Field names match AlarmRules.
+ * ===================================================================== */
+
+// Recommended settings: the same defaults as AlarmRules in alarms.py.
+const RECOMMENDED = {
+  pit_high: true, pit_low: true, probe_high: true, probe_low: false,
+  gateway_timeout: true, gateway_timeout_minutes: 5,
+  probe_timeout: true, probe_timeout_minutes: 5,
+  source_unreachable: true, source_unreachable_minutes: 5,
+  grill_timeout: true, grill_timeout_minutes: 5,
+  grill_off_target: true, grill_off_target_c: 14,
+  gateway_battery_pct: 10, probe_battery_pct: 10, pellets_low_pct: 20,
+  units: "C",
+};
+
+/* What's on the page, in the order shown. An alarm is either:
+ * - a switch ("on" key), maybe with a number that applies while it's on, or
+ * - a switch for a percentage alarm stored as a number, where 0 means off
+ *   ("pct" key): shown as a switch + number so "off" is never a hidden 0. */
+const SECTIONS = [
+  { title: "Temperatures", footer: "Limits come from the ETI app unless you set your own for a probe or pit.", rows: [
+    { on: "pit_high", name: "Pit too hot", hint: "Above its high limit" },
+    { on: "pit_low", name: "Pit too cold", hint: "Below its low limit: the fire may be going out" },
+    { on: "probe_high", name: "Meat reached its target", hint: "The main one: your food is done" },
+    { on: "probe_low", name: "Meat too cold", hint: "Below its low limit. Rarely needed" },
+  ]},
+  { title: "Lost contact", footer: "How long a device can go quiet before the alarm rings. While a whole service can't be reached, its devices' “gone quiet” alarms wait, and this one rings instead.", rows: [
+    { on: "gateway_timeout", name: "RFX Gateway gone quiet", minutes: "gateway_timeout_minutes" },
+    { on: "probe_timeout", name: "Probe gone quiet", hint: "Only probes used in this cook", minutes: "probe_timeout_minutes" },
+    { on: "grill_timeout", name: "Grill gone quiet", hint: "Only while the grill is switched on", minutes: "grill_timeout_minutes" },
+    { on: "source_unreachable", name: "Can't reach ETI or Traeger", hint: "The Pi has lost the internet, or the service is down", minutes: "source_unreachable_minutes" },
+  ]},
+  { title: "Traeger grill", footer: "Only while the grill is cooking: not while lighting, heating up or cooling down.", rows: [
+    { on: "grill_off_target", name: "Grill off its set temperature", hint: "Too far above or below what it's set to", degrees: "grill_off_target_c" },
+    { pct: "pellets_low_pct", name: "Pellets running low", hint: "Needs the grill's pellet sensor" },
+  ]},
+  { title: "Batteries", rows: [
+    { pct: "gateway_battery_pct", name: "RFX Gateway battery low" },
+    { pct: "probe_battery_pct", name: "Probe battery low" },
+  ]},
+];
+
+// Sensible ranges, so a slip of the finger can't set something silly.
+const LIMITS = {
+  minutes: { min: 1, max: 60, step: 1 },
+  pct: { min: 5, max: 90, step: 5 },
+  degreesC: { min: 3, max: 50, step: 1 },
+};
+
+let saved = structuredClone(RECOMMENDED);   // what the Pi has
+let draft = structuredClone(saved);         // what's on screen
+let lastOnPct = {};                          // remembers a % while its switch is off
+
+const $ = (id) => document.getElementById(id);
+const isOn = (row, s) => row.on ? s[row.on] : s[row.pct] > 0;
+const toF = (c) => Math.round(c * 9 / 5);        // a temperature *difference*
+const toC = (f) => Math.round(f * 5 / 9);
+
+/* ------------------------------------------------------------ render --- */
+function render() {
+  const out = [];
+  SECTIONS.forEach((section, i) => {
+    const hid = `sec-${i}`;
+    out.push(`<h2 id="${hid}">${section.title}</h2><div class="group" role="group" aria-labelledby="${hid}">`);
+    section.rows.forEach((row) => out.push(rowHtml(row)));
+    out.push(`</div>`);
+    if (section.footer) out.push(`<p class="footer">${section.footer}</p>`);
+  });
+  $("sections").innerHTML = out.join("");
+  bind();
+  refresh();
+}
+
+function rowHtml(row) {
+  const key = row.on || row.pct;
+  const id = `sw-${key}`;
+  const hint = row.hint ? `<p class="hint" id="hint-${key}">${row.hint}</p>` : "";
+  const described = row.hint ? `aria-describedby="hint-${key} off-${key}"` : `aria-describedby="off-${key}"`;
+  let sub = "";
+  if (row.minutes) sub = subHtml(key, row.minutes, "Ring after", "min", "minutes");
+  if (row.degrees) sub = subHtml(key, row.degrees, "Allowed difference", "°C", "degrees");
+  if (row.pct) sub = subHtml(key, row.pct, "Ring below", "%", "percent");
+  return `
+    <div class="row">
+      <div class="text">
+        <label class="name" for="${id}">${row.name}</label>${hint}
+        <span class="state-off" id="off-${key}" hidden>Off: won't wake you</span>
+      </div>
+      <span class="switch-hit"><input type="checkbox" role="switch" id="${id}" data-row="${key}" ${described}></span>
+    </div>${sub}`;
+}
+
+function subHtml(rowKey, field, words, unit, spoken) {
+  return `
+    <div class="sub" id="sub-${rowKey}">
+      <span class="what" id="what-${field}">${words}</span>
+      <div class="stepper">
+        <button type="button" data-step="-1" data-field="${field}" aria-label="Fewer ${spoken}">−</button>
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="num-${field}" data-field="${field}"
+               aria-labelledby="what-${field} unit-${field}" aria-describedby="err-${field}">
+        <button type="button" data-step="1" data-field="${field}" aria-label="More ${spoken}">+</button>
+      </div>
+      <span class="unit" id="unit-${field}">${unit}</span>
+    </div>
+    <p class="error" id="err-${field}" role="alert" hidden></p>`;
+}
+
+/* ------------------------------------------------------------- state --- */
+function rowFor(key) {
+  for (const s of SECTIONS) for (const r of s.rows) if ((r.on || r.pct) === key) return r;
+}
+function rangeFor(field) {
+  if (field.endsWith("_minutes")) return LIMITS.minutes;
+  if (field.endsWith("_pct")) return LIMITS.pct;
+  const c = LIMITS.degreesC;
+  return draft.units === "F" ? { min: toF(c.min), max: toF(c.max), step: 1 } : c;
+}
+// The number shown for a field, in the units shown.
+function shown(field) {
+  const v = draft[field];
+  return field.endsWith("_c") && draft.units === "F" ? toF(v) : v;
+}
+
+function bind() {
+  document.querySelectorAll('input[role="switch"]').forEach((sw) => {
+    sw.addEventListener("change", () => {
+      const row = rowFor(sw.dataset.row);
+      if (row.on) draft[row.on] = sw.checked;
+      else if (sw.checked) draft[row.pct] = lastOnPct[row.pct] || RECOMMENDED[row.pct];
+      else { lastOnPct[row.pct] = draft[row.pct]; draft[row.pct] = 0; }
+      refresh();
+    });
+  });
+  document.querySelectorAll(".stepper button").forEach((b) => {
+    b.addEventListener("click", () => {
+      const field = b.dataset.field, r = rangeFor(field);
+      const next = clamp(shown(field) + Number(b.dataset.step) * r.step, r);
+      setShown(field, next);
+      clearError(field);
+      refresh();
+    });
+  });
+  document.querySelectorAll(".stepper input").forEach((input) => {
+    input.addEventListener("input", () => checkTyped(input));
+    input.addEventListener("blur", () => { if (!input.getAttribute("aria-invalid")) refresh(); });
+  });
+}
+
+function clamp(v, r) { return Math.min(r.max, Math.max(r.min, v)); }
+function setShown(field, v) {
+  draft[field] = field.endsWith("_c") && draft.units === "F" ? toC(v) : v;
+}
+
+// Typed numbers: say what's wrong and how to fix it, next to the box.
+function checkTyped(input) {
+  const field = input.dataset.field, r = rangeFor(field);
+  const text = input.value.trim();
+  const n = Number(text);
+  let problem = "";
+  if (text === "" || !Number.isInteger(n)) problem = "Enter a whole number";
+  else if (n < r.min || n > r.max) problem = `Choose between ${r.min} and ${r.max}`;
+  if (problem) {
+    input.setAttribute("aria-invalid", "true");
+    const err = $(`err-${field}`);
+    err.innerHTML = `<span aria-hidden="true">⚠︎</span><span>${problem}</span>`;
+    err.hidden = false;
+  } else {
+    clearError(field);
+    setShown(field, n);
+  }
+  updateSaveBar();
+}
+function clearError(field) {
+  $(`num-${field}`).removeAttribute("aria-invalid");
+  $(`err-${field}`).hidden = true;
+}
+const hasErrors = () => document.querySelector('[aria-invalid="true"]') !== null;
+
+function refresh() {
+  for (const s of SECTIONS) for (const row of s.rows) {
+    const key = row.on || row.pct, on = isOn(row, draft);
+    $(`sw-${key}`).checked = on;
+    $(`off-${key}`).hidden = on;
+    const sub = $(`sub-${key}`);
+    if (sub) {
+      sub.hidden = !on;
+      const field = row.minutes || row.degrees || row.pct;
+      const input = $(`num-${field}`);
+      if (input.getAttribute("aria-invalid") !== "true") input.value = shown(field);
+      const r = rangeFor(field);
+      sub.querySelector('[data-step="-1"]').disabled = shown(field) <= r.min;
+      sub.querySelector('[data-step="1"]').disabled = shown(field) >= r.max;
+      if (row.degrees) $(`unit-${field}`).textContent = draft.units === "F" ? "°F" : "°C";
+    }
+  }
+  document.querySelector(`input[name="units"][value="${draft.units}"]`).checked = true;
+  updateSummary();
+  updateSaveBar();
+}
+
+function offAlarms(s) {
+  const off = [];
+  for (const sec of SECTIONS) for (const row of sec.rows) if (!isOn(row, s)) off.push(row.name);
+  return off;
+}
+
+function updateSummary() {
+  const off = offAlarms(saved);
+  $("summary").textContent = off.length === 0
+    ? "All alarms are on. Changes reach the monitor within 30 seconds of saving."
+    : "Changes reach the monitor within 30 seconds of saving.";
+  $("offBanner").hidden = off.length === 0;
+  $("offBannerText").textContent = off.length === 1
+    ? `1 alarm is off: ${off[0]}.`
+    : `${off.length} alarms are off: ${off.join(", ")}.`;
+}
+
+function changes() {
+  return Object.keys(saved).filter((k) => saved[k] !== draft[k]);
+}
+function changedAlarms() {
+  const names = new Set();
+  for (const sec of SECTIONS) for (const row of sec.rows) {
+    const fields = [row.on, row.pct, row.minutes, row.degrees].filter(Boolean);
+    if (fields.some((f) => saved[f] !== draft[f])) names.add(row.name);
+  }
+  if (saved.units !== draft.units) names.add("Temperatures in");
+  return [...names];
+}
+
+function updateSaveBar() {
+  const n = changedAlarms().length;
+  $("savebar").hidden = n === 0;
+  $("changeCount").textContent = n === 1 ? "1 unsaved change" : `${n} unsaved changes`;
+  $("saveButton").disabled = hasErrors();
+}
+
+/* -------------------------------------------------------- confirming --- */
+function confirmSheet({ title, body, yes, no }) {
+  return new Promise((resolve) => {
+    $("confirmTitle").textContent = title;
+    $("confirmBody").innerHTML = body;
+    $("confirmYes").textContent = yes;
+    $("confirmNo").textContent = no;
+    const d = $("confirm");
+    const done = (answer) => { d.close(); resolve(answer); };
+    $("confirmYes").onclick = () => done(true);
+    $("confirmNo").onclick = () => done(false);
+    d.oncancel = (e) => { e.preventDefault(); done(false); };
+    d.showModal();
+  });
+}
+
+const escape = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function save() {
+  if (hasErrors()) return;
+  // Switching an alarm off is the one change that can cost you a cook, so
+  // it's the one that asks first. Everything else saves straight away.
+  const newlyOff = offAlarms(draft).filter((name) => !offAlarms(saved).includes(name));
+  if (newlyOff.length) {
+    const ok = await confirmSheet({
+      title: newlyOff.length === 1 ? "Turn this alarm off?" : `Turn ${newlyOff.length} alarms off?`,
+      body: `<p>These won't wake you until you turn them back on:</p><ul>${newlyOff.map((n) => `<li>${escape(n)}</li>`).join("")}</ul>`,
+      yes: "Turn off and save",
+      no: newlyOff.length === 1 ? "Keep it on" : "Keep them on",
+    });
+    if (!ok) return;
+  }
+  $("saveButton").disabled = true;
+  $("saveButton").textContent = "Saving…";
+  await new Promise((r) => setTimeout(r, 600));   // mock: PUT /api/settings
+  saved = structuredClone(draft);
+  $("saveButton").textContent = "Save";
+  refresh();
+  toast("Saved. The monitor uses these from its next check.");
+}
+
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (t.hidden = true), 4000);
+}
+
+/* ------------------------------------------------------------ wiring --- */
+$("saveButton").addEventListener("click", save);
+$("discardButton").addEventListener("click", () => {
+  draft = structuredClone(saved);
+  document.querySelectorAll('[aria-invalid="true"]').forEach((i) => clearError(i.dataset.field));
+  refresh();
+  toast("Changes discarded");
+});
+document.querySelectorAll('input[name="units"]').forEach((r) =>
+  r.addEventListener("change", () => { draft.units = r.value; refresh(); }));
+$("resetButton").addEventListener("click", async () => {
+  const ok = await confirmSheet({
+    title: "Reset to recommended?",
+    body: "<p>Every alarm goes back to its recommended setting. You can review the changes before saving.</p>",
+    yes: "Reset", no: "Cancel",
+  });
+  if (!ok) return;
+  draft = structuredClone({ ...RECOMMENDED, units: draft.units });
+  refresh();
+});
+window.addEventListener("beforeunload", (e) => { if (changes().length) e.preventDefault(); });
+
+render();
+</script>
+</body>
+</html>
