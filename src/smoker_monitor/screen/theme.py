@@ -15,8 +15,10 @@ HEIGHT = 480
 MARGIN = 8  # around the edge of the screen
 GAP = 10  # between tiles
 RADIUS = 14  # how rounded the tiles' corners are
+PIT_HEIGHT = 220  # the big pit tiles across the top
 
 # Colours, as (red, green, blue).
+Colour = tuple[int, int, int]
 BACKGROUND = (14, 16, 20)
 TILE = (30, 34, 42)
 TEXT = (235, 237, 240)
