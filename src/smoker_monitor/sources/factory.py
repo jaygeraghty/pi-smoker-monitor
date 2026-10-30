@@ -9,6 +9,7 @@ from __future__ import annotations
 from smoker_monitor.config import Config
 from smoker_monitor.sources.base import Source
 from smoker_monitor.sources.eti_cloud import EtiCloudSource
+from smoker_monitor.sources.traeger import TraegerSource
 
 
 def build_sources(config: Config) -> list[Source]:
@@ -16,5 +17,6 @@ def build_sources(config: Config) -> list[Source]:
     sources: list[Source] = []
     if config.eti_cloud is not None:
         sources.append(EtiCloudSource(config.eti_cloud))
-    # Traeger: read-only source to come (config.traeger_mqtt).
+    if config.traeger_mqtt is not None:
+        sources.append(TraegerSource(config.traeger_mqtt))
     return sources

@@ -204,10 +204,12 @@ def test_config_without_any_brand_is_an_error(tmp_path: Path) -> None:
         load_config(write_config(tmp_path, text))
 
 
-def test_traeger_alone_is_not_enough_yet(tmp_path: Path) -> None:
-    text = "[polling]\ninterval_seconds = 30\n" + TRAEGER
-    with pytest.raises(ConfigError, match="Nothing to monitor"):
-        load_config(write_config(tmp_path, text))
+def test_traeger_alone_is_enough(tmp_path: Path) -> None:
+    text = "[polling]\ninterval_seconds = 45\n" + TRAEGER
+    config = load_config(write_config(tmp_path, text))
+    assert config.eti_cloud is None
+    assert config.traeger_mqtt is not None
+    assert config.traeger_mqtt.poll_seconds == 45  # [polling] interval_seconds
 
 
 def test_renamed_alarm_setting_says_its_new_name(tmp_path: Path) -> None:

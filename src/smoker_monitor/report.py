@@ -18,10 +18,17 @@ from smoker_monitor.domain.models import (
     Fan,
     FanActivity,
     Gateway,
+    Grill,
     Probe,
     Snapshot,
 )
-from smoker_monitor.domain.names import device_names, gateway_name, probe_base_name, probe_names
+from smoker_monitor.domain.names import (
+    device_names,
+    gateway_names,
+    grill_names,
+    probe_base_name,
+    probe_names,
+)
 
 
 def format_snapshot(
@@ -37,6 +44,7 @@ def format_snapshot(
     """
     rules = rules or AlarmRules()
     gateway_limit = timedelta(minutes=rules.gateway_timeout_minutes)
+    grill_limit = timedelta(minutes=rules.grill_timeout_minutes)
     probe_limit = timedelta(minutes=rules.probe_timeout_minutes)
     lines: list[str] = []
 
@@ -44,13 +52,21 @@ def format_snapshot(
         lines.extend(format_active_alarms(alarms, snapshot))
         lines.append("")
 
-    if not snapshot.gateways:
+    if not snapshot.gateways and not snapshot.grills:
         lines.append("No gateway found.")
+    gateway_display = gateway_names(snapshot.gateways)
     for number, gateway in enumerate(snapshot.gateways):
         if number:
             lines.append("")
         fresh = is_fresh(gateway.last_seen, now, gateway_limit)
-        lines.extend(format_gateway(gateway, now, fresh))
+        lines.extend(format_gateway(gateway, now, fresh, gateway_display[gateway.id]))
+
+    grill_display = grill_names(snapshot.grills)
+    for number, grill in enumerate(snapshot.grills):
+        if number or snapshot.gateways:
+            lines.append("")
+        fresh = is_fresh(grill.last_seen, now, grill_limit)
+        lines.extend(format_grill(grill, now, fresh, grill_display[grill.id]))
 
     names = probe_names(snapshot.probes)
     for probe in snapshot.probes:
@@ -68,14 +84,21 @@ def format_active_alarms(alarms: Sequence[Alarm], snapshot: Snapshot) -> list[st
 
 
 def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
-    """One alarm in plain English. The Snapshot supplies the device's name."""
+    """One alarm in plain English. The Snapshot supplies the device's name.
+
+    With one Gateway, its alarms just say "Pit" and "Gateway"; with several,
+    they name which one, e.g. "RFX GATEWAY 2 pit too hot".
+    """
     name = device_names(snapshot).get(alarm.device, "Unknown device")
+    several = len(snapshot.gateways) > 1
+    pit = f"{name} pit" if several else "Pit"
+    hub = name if several else "Gateway"
     value, limit = alarm.value, alarm.limit
     match alarm.kind:
         case AlarmKind.PIT_HIGH:
-            return f"Pit too hot: {format_temp(value)} (limit {format_temp(limit)})"
+            return f"{pit} too hot: {format_temp(value)} (limit {format_temp(limit)})"
         case AlarmKind.PIT_LOW:
-            return f"Pit too cold: {format_temp(value)} (limit {format_temp(limit)})"
+            return f"{pit} too cold: {format_temp(value)} (limit {format_temp(limit)})"
         case AlarmKind.PROBE_HIGH:
             return f"{name} reached target: {format_temp(value)} (target {format_temp(limit)})"
         case AlarmKind.PROBE_LOW:
@@ -83,13 +106,23 @@ def describe_alarm(alarm: Alarm, snapshot: Snapshot) -> str:
         case AlarmKind.GATEWAY_TIMEOUT:
             if value is None:  # device is the source's key
                 return f"No gateway found from {snapshot.source_name(alarm.device)}"
-            return f"Gateway silent for {format_minutes(value)} (limit {format_minutes(limit)})"
+            return f"{hub} silent for {format_minutes(value)} (limit {format_minutes(limit)})"
         case AlarmKind.PROBE_TIMEOUT:
             return f"{name} silent for {format_minutes(value)} (limit {format_minutes(limit)})"
         case AlarmKind.GATEWAY_BATTERY:
-            return f"Gateway battery low: {format_percent(value)} (below {format_percent(limit)})"
+            return f"{hub} battery low: {format_percent(value)} (below {format_percent(limit)})"
         case AlarmKind.PROBE_BATTERY:
             return f"{name} battery low: {format_percent(value)} (below {format_percent(limit)})"
+        case AlarmKind.GRILL_TIMEOUT:
+            return f"{name} silent for {format_minutes(value)} (limit {format_minutes(limit)})"
+        case AlarmKind.GRILL_OFF_TARGET:
+            hot = value is not None and limit is not None and value > limit
+            return (
+                f"{name} too {'hot' if hot else 'cold'}: {format_temp(value)} "
+                f"(set to {format_temp(limit)})"
+            )
+        case AlarmKind.PELLETS_LOW:
+            return f"{name} pellets low: {format_percent(value)} (below {format_percent(limit)})"
         case AlarmKind.SOURCE_UNREACHABLE:  # device is the source's key
             return (
                 f"Can't reach {snapshot.source_name(alarm.device)} for {format_minutes(value)} "
@@ -107,10 +140,12 @@ def format_fan_activity(fan: Fan) -> str:
     return f"state {code} (UNKNOWN)"
 
 
-def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[str]:
-    """Lines describing the Gateway, its pit probe and the Billows fan."""
+def format_gateway(gateway: Gateway, now: datetime, fresh: bool, name: str) -> list[str]:
+    """Lines describing the Gateway, its pit probe and the Billows fan.
+
+    `name` is its display name (see domain/names.py)."""
     lines = [
-        gateway_name(gateway),
+        name,
         f"  Battery {format_percent(gateway.battery_pct)}, "
         f"Wi-Fi {format_dbm(gateway.wifi_dbm)}, "
         f"last seen {format_age(now - gateway.last_seen)}",
@@ -137,6 +172,20 @@ def format_gateway(gateway: Gateway, now: datetime, fresh: bool = True) -> list[
         if deviation is not None:
             lines.append(f"  Pit is {deviation:+.1f}°C from the set temperature")
 
+    return lines
+
+
+def format_grill(grill: Grill, now: datetime, fresh: bool, name: str) -> list[str]:
+    """Lines describing a grill. `name` is its display name (see domain/names.py)."""
+    state = grill.mode.value if grill.connected else f"{grill.mode.value}, not connected"
+    lines = [
+        name,
+        f"  {state.capitalize()}, last seen {format_age(now - grill.last_seen)}"
+        + ("" if fresh else " (no recent data)"),
+        f"  Grill:   {format_temp(grill.celsius())}, set to {format_temp(grill.set_temp_celsius)}",
+    ]
+    if grill.pellet_pct is not None:
+        lines.append(f"  Pellets: {format_percent(grill.pellet_pct)}")
     return lines
 
 

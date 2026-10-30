@@ -48,6 +48,7 @@ class TraegerSettings:
     email: str
     password: str = field(repr=False)
     client_id: str
+    poll_seconds: int = 30  # [traeger_mqtt] poll_seconds, else [polling] interval_seconds
 
 
 @dataclass(frozen=True)
@@ -104,11 +105,13 @@ def load_config(path: Path) -> Config:
             email=_get_str(data, "traeger_mqtt", "email"),
             password=_get_str(data, "traeger_mqtt", "password"),
             client_id=_get_str(data, "traeger_mqtt", "client_id"),
+            poll_seconds=_poll_seconds(data, "traeger_mqtt", interval),
         )
 
-    # Traeger settings are read, but it can't be monitored yet, so it doesn't count.
-    if eti_cloud is None:
-        raise ConfigError("Nothing to monitor: add an [eti_cloud] section to the config")
+    if eti_cloud is None and traeger_mqtt is None:
+        raise ConfigError(
+            "Nothing to monitor: add an [eti_cloud] or [traeger_mqtt] section to the config"
+        )
 
     return Config(
         eti_cloud=eti_cloud,
@@ -161,6 +164,15 @@ def load_alarm_rules(data: dict[str, Any]) -> AlarmRules:
         source_unreachable_minutes=_alarm_int(
             table, "source_unreachable_minutes", defaults.source_unreachable_minutes, 1, 1440
         ),
+        grill_timeout=_alarm_bool(table, "grill_timeout", defaults.grill_timeout),
+        grill_timeout_minutes=_alarm_int(
+            table, "grill_timeout_minutes", defaults.grill_timeout_minutes, 1, 1440
+        ),
+        grill_off_target=_alarm_bool(table, "grill_off_target", defaults.grill_off_target),
+        grill_off_target_c=_alarm_int(
+            table, "grill_off_target_c", defaults.grill_off_target_c, 1, 100
+        ),
+        pellets_low_pct=_alarm_int(table, "pellets_low_pct", defaults.pellets_low_pct, 0, 100),
     )
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -225,6 +226,19 @@ def test_every_alarm_kind_has_wording() -> None:
     """A new AlarmKind without wording would fail here (and in mypy)."""
     for kind in AlarmKind:
         assert describe_alarm(Alarm(kind, "P1", 1.0, 2.0), WITH_PROBE)
+
+
+def test_twin_gateways_are_named_in_report_and_alarms() -> None:
+    first = live_gateway(110.0, None)
+    second = replace(first, serial="G2")
+    snapshot = Snapshot(taken_at=NOW, gateways=(first, second), probes=())
+    report = format_snapshot(snapshot, NOW)
+    assert "RFX GATEWAY 1\n" in report and "RFX GATEWAY 2\n" in report
+
+    hot = Alarm(AlarmKind.PIT_HIGH, "G2", 182.0, 170.0)
+    assert describe_alarm(hot, snapshot) == "RFX GATEWAY 2 pit too hot: 182.0°C (limit 170.0°C)"
+    flat = Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10)
+    assert describe_alarm(flat, snapshot) == "RFX GATEWAY 1 battery low: 8% (below 10%)"
 
 
 def test_unknown_source_falls_back_to_its_key() -> None:

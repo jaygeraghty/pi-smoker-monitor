@@ -27,3 +27,12 @@ connected, Gateway offline, probe battery low, a probe out of range.
 
 In both fan captures the app had moved the pit alarms to 25 °F above and below
 the set temperature.
+
+## Traeger
+
+Made with `scripts/capture_traeger.py` (read-only: it only listens, plus
+Traeger's "send me your status" request). Each file holds the account's list
+of grills and every status message heard while listening, redacted:
+
+    uv run python scripts/capture_traeger.py off
+    uv run python scripts/capture_traeger.py cooking --seconds 120

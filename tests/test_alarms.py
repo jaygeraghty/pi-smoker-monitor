@@ -223,6 +223,23 @@ def test_custom_limit_only_replaces_its_own_side() -> None:
     assert kinds(alarms) == [AlarmKind.PIT_LOW]
 
 
+def test_custom_limits_are_keyed_by_id_not_serial() -> None:
+    """With a source, a device's id is "eti:P1": that's the key, not the bare serial."""
+    eti_probe = replace(probe(93.0, high=limit(95.0)), source="eti")
+    by_id = {"eti:P1": AlarmSettings(high=limit(92.0), low=None)}
+    by_serial = {"P1": AlarmSettings(high=limit(92.0), low=None)}
+    assert check(CALM, eti_probe, custom=by_id) == (
+        Alarm(AlarmKind.PROBE_HIGH, "eti:P1", 93.0, 92.0),
+    )
+    assert check(CALM, eti_probe, custom=by_serial) == ()  # ETI's 95°C still applies
+
+
+def test_custom_gateway_limits_are_keyed_by_id() -> None:
+    eti_gateway = replace(gateway(175.0, high=limit(170.0)), source="eti")
+    custom = {"eti:G1": AlarmSettings(high=limit(180.0), low=None)}
+    assert check(eti_gateway, custom=custom) == ()
+
+
 def test_custom_limits_for_other_devices_are_ignored() -> None:
     custom = {"SOMEONE-ELSE": AlarmSettings(high=limit(1.0), low=None)}
     assert check(CALM, probe(50.0, high=limit(95.0)), custom=custom) == ()

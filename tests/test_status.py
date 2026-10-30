@@ -141,11 +141,18 @@ def test_gateway_as_a_pit() -> None:
         "low_c": 96.1,
         "fan": "blowing",
         "fan_output_pct": None,
+        "pellet_pct": None,
         "details": [
             {"label": "Battery", "value": "80%"},
             {"label": "Wi-Fi", "value": "-55 dBm"},
         ],
     }
+
+
+def test_twin_gateways_get_numbered_names() -> None:
+    twin = replace(GATEWAY, serial="G2")
+    names = [p["name"] for p in status(Snapshot(NOW, (GATEWAY, twin), (), (ETI,)))["pits"]]
+    assert names == ["RFX GATEWAY 1", "RFX GATEWAY 2"]
 
 
 def test_no_gateway_means_no_pits() -> None:
