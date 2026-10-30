@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 pi = [
+    "evdev>=1.6",  # the screen: tap to silence (Linux only)
     "gpiozero>=2.0",
 ]
 
@@ -70,7 +71,7 @@ strict = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["thermoworks_cloud.*", "gpiozero.*"]
+module = ["thermoworks_cloud.*", "gpiozero.*", "evdev", "evdev.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
