@@ -62,16 +62,21 @@ def numbered(base: Mapping[str, str]) -> dict[str, str]:
     """Number any names shared by more than one device ("RFX MEAT 1", ...), in id order.
 
     `base` maps each device id to its name before numbering. The result keeps
-    the original order of `base`.
+    the original order of `base`. A number is skipped if it would clash with a
+    name already in use: with a probe you called "brisket 1" and two called
+    "brisket", those two become "brisket 2" and "brisket 3".
     """
     counts = Counter(base.values())
-    seen: Counter[str] = Counter()
+    taken = {name for name in base.values() if counts[name] == 1}
     final: dict[str, str] = {}
     for device_id in sorted(base):
         name = base[device_id]
         if counts[name] > 1:
-            seen[name] += 1
-            name = f"{name} {seen[name]}"
+            number = 1
+            while f"{name} {number}" in taken:
+                number += 1
+            name = f"{name} {number}"
+            taken.add(name)
         final[device_id] = name
     return {device_id: final[device_id] for device_id in base}
 

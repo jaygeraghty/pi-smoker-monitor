@@ -80,9 +80,6 @@ MODELS = {"2104": "Pro 575"}
 # Longest grill name shown, so a long one can't break a screen's layout.
 MAX_NAME_LENGTH = 20
 
-# How far ahead of our clock a grill's own timestamp may be and still be believed.
-CLOCK_SLACK_SECONDS = 300
-
 # How long the first fetch after connecting waits for each grill's first
 # message (once per connection). A grill that's off still answers (the cloud
 # resends its last status), so this is only a backstop.
@@ -115,7 +112,10 @@ class TraegerSource:
         self._waited_for_first = False  # the one-off wait after connecting is done
 
     async def fetch(self) -> Snapshot:
-        """The latest status from every grill. Raises SourceError if not listening."""
+        """The latest status from every grill.
+
+        Raises SourceError while the connection to Traeger isn't working.
+        """
         if self._task is None or self._task.done():
             self._start()
         try:
@@ -154,31 +154,39 @@ class TraegerSource:
         self._task = asyncio.create_task(self._listen_forever())
 
     async def _listen_forever(self) -> None:
-        """Find the grills, then listen to them, reconnecting as needed.
+        """Find the grills, then listen to them, forever, reconnecting as needed.
 
-        Any failure stops it with self._error set; the next fetch() reports
-        that error and starts it again.
+        It never gives up: after a failure it records why (self._error, which
+        fetch() reports), waits RECONNECT_SECONDS and tries again. The error
+        stays until a grill's message actually arrives, because only that
+        proves the connection works again. Otherwise the source would look
+        healthy between attempts, and "Can't reach Traeger" could never build
+        up its minutes.
         """
-        try:
-            self._grills = await self._cloud.grills()
-            self._listening_since = datetime.now(UTC)
-            self._ready.set()
-            things = [grill["thingName"] for grill in self._grills]
-            while True:
+        while True:
+            try:
+                if self._grills is None:
+                    self._grills = await self._cloud.grills()
+                    self._listening_since = datetime.now(UTC)
+                    self._ready.set()
+                things = [grill["thingName"] for grill in self._grills]
                 # Returns when its MQTT address is about to expire: go round
                 # again for a fresh one.
                 await self._cloud.listen(things, self._remember)
-        except asyncio.CancelledError:
-            raise
-        except SourceError as e:
-            self._error = str(e)
-        except Exception:
-            log.exception("Traeger listener failed unexpectedly")
-            self._error = "Traeger failed unexpectedly (see the log)"
-        self._ready.set()  # wake a waiting fetch() so it sees the error
+                continue
+            except asyncio.CancelledError:
+                raise
+            except SourceError as e:
+                self._error = str(e)
+            except Exception:
+                log.exception("Traeger listener failed unexpectedly")
+                self._error = "Traeger failed unexpectedly (see the log)"
+            self._ready.set()  # wake a waiting fetch() so it sees the error
+            await asyncio.sleep(RECONNECT_SECONDS)
 
     def _remember(self, message: GrillMessage) -> None:
         self._latest[message.thing] = message
+        self._error = None  # a message arrived: the connection works
         grills = self._grills or []
         if all(grill["thingName"] in self._latest for grill in grills):
             self._heard_all.set()
@@ -328,14 +336,16 @@ def status_time(status: Mapping[str, Any], received_at: float) -> datetime:
     Traeger's cloud keeps a grill's last status and sends it again when asked,
     even if the grill has been off for weeks (a real capture: received in
     October, "time" from 5 September). So "time", the grill's own timestamp,
-    is what says how fresh the status is. Without a believable one (missing,
-    or later than when it arrived), the time it arrived is used instead.
+    is what says how fresh the status is: the earlier of it and the time the
+    message arrived. Without a usable one, the time it arrived is used.
     """
     stamp = status.get("time")
     if isinstance(stamp, bool) or not isinstance(stamp, int | float):
         return datetime.fromtimestamp(received_at, UTC)
-    if 0 < stamp <= received_at + CLOCK_SLACK_SECONDS:
-        return datetime.fromtimestamp(stamp, UTC)
+    if stamp > 0:
+        # Never later than it arrived: a grill clock running fast would
+        # otherwise make old data look fresh, and hold off "gone quiet".
+        return datetime.fromtimestamp(min(stamp, received_at), UTC)
     return datetime.fromtimestamp(received_at, UTC)
 
 

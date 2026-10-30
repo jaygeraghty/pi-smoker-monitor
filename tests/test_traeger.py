@@ -187,12 +187,18 @@ class FakeCloud(TraegerCloud):
     """Stands in for the real cloud: no network, prepared messages."""
 
     def __init__(
-        self, messages: list[dict[str, Any]], fail: Exception | None = None, delay: float = 0
+        self,
+        messages: list[dict[str, Any]],
+        fail: Exception | None = None,
+        delay: float = 0,
+        listen_failures: int = 0,
     ) -> None:
         super().__init__(SETTINGS)
         self.messages = messages
         self.fail = fail
         self.delay = delay  # seconds before the first message arrives
+        self.listen_failures = listen_failures  # connections that fail before one works
+        self.listens = 0
         self.closed = False
 
     async def grills(self) -> list[dict[str, Any]]:
@@ -206,6 +212,9 @@ class FakeCloud(TraegerCloud):
         on_message: Callable[[GrillMessage], None],
         seconds: float | None = None,
     ) -> None:
+        self.listens += 1
+        if self.listens <= self.listen_failures:
+            raise SourceError("Lost the connection to Traeger (test)")
         await asyncio.sleep(self.delay)
         for payload in self.messages:
             on_message(message(payload))
@@ -256,6 +265,26 @@ async def test_silent_grill_only_delays_the_first_fetch(
     await source.fetch()
     await source.fetch()
     assert loop.time() - started < 0.1
+    await source.close()
+
+
+async def test_failing_connection_keeps_failing_until_a_message_arrives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Login works but the live connection doesn't: every poll must fail, so
+    "Can't reach Traeger" can build up its minutes, not flip back and forth."""
+    monkeypatch.setattr(traeger, "RECONNECT_SECONDS", 0.01)
+    cloud = FakeCloud([COOKING], listen_failures=3)
+    source = TraegerSource(SETTINGS, cloud)
+    with pytest.raises(SourceError, match="Lost the connection"):
+        await source.fetch()
+    await asyncio.sleep(0.005)  # between retries
+    with pytest.raises(SourceError, match="Lost the connection"):
+        await source.fetch()
+    await asyncio.sleep(0.1)  # the fourth attempt works and a message arrives
+    [grill] = (await source.fetch()).grills
+    assert grill.mode is GrillMode.COOKING
+    assert cloud.listens == 4
     await source.close()
 
 
@@ -329,7 +358,8 @@ def test_real_capture_raises_no_alarms() -> None:
     ("stamp", "expected"),
     [
         (RECEIVED.timestamp() - 60, RECEIVED - timedelta(seconds=60)),
-        (RECEIVED.timestamp() + 3600, RECEIVED),  # from the future: not believed
+        (RECEIVED.timestamp() + 3600, RECEIVED),  # from the future: capped
+        (RECEIVED.timestamp() + 120, RECEIVED),  # a clock running a bit fast: capped
         (None, RECEIVED),
         ("1788634514", RECEIVED),
     ],

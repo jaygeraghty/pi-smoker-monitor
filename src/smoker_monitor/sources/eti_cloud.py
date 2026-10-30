@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import unicodedata
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -446,13 +447,16 @@ def to_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str):
+        number = float(value)
+    elif isinstance(value, str):
         try:
-            return float(value)
+            number = float(value)
         except ValueError:
             return None
-    return None
+    else:
+        return None
+    # "NaN" and "Infinity" parse as floats but aren't readings.
+    return number if math.isfinite(number) else None
 
 
 def to_int(value: Any) -> int | None:

@@ -82,6 +82,23 @@ def add_fake(fakes: dict[str, str], real: Any, fake: str) -> None:
         fakes[str(real)] = fake
 
 
+# Free text you type in the app that could hold anything (a name, an address,
+# a sharing link). Replaced wholesale, as it can't be redacted value by value.
+# Probe names and cook names (channel labels, sessionLabel) are kept: the app
+# shows them and the tests need them; they're what you call your probes.
+FREE_TEXT_FIELDS = ("notes", "publicLink")
+
+
+def blank_free_text(raw: dict[str, Any]) -> dict[str, Any]:
+    """`raw` with every non-empty FREE_TEXT_FIELDS value replaced by "REDACTED"."""
+    for device in raw.get("devices", []):
+        extra = device.get("additional_properties") or {}
+        for field in FREE_TEXT_FIELDS:
+            if extra.get(field):
+                extra[field] = "REDACTED"
+    return raw
+
+
 def redact(value: Any, fakes: dict[str, str]) -> Any:
     """Return a copy of value with every real identifier swapped for its fake.
 
@@ -123,7 +140,7 @@ async def main() -> None:
     save_json(raw, RAW_FILE)
 
     fakes = find_sensitive_values(raw)
-    redacted = redact(raw, fakes)
+    redacted = blank_free_text(redact(raw, fakes))
     save_json(redacted, FIXTURE_FILE)
 
     print(f"Saved your real data to {RAW_FILE} (git-ignored).")
