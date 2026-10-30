@@ -36,3 +36,9 @@ of grills and every status message heard while listening, redacted:
 
     uv run python scripts/capture_traeger.py off
     uv run python scripts/capture_traeger.py cooking --seconds 120
+
+- `traeger_off.json`: a Pro 575 (firmware 02.02.05), switched off. One
+  message: Traeger's cloud resending the grill's last status, from
+  2026-09-05 18:55 UTC (`status.time`), when asked on 2026-10-30. Offline
+  (system_status 99), °C (units 0), grill 16 °C, set 75 °C, pellets 30%, no
+  probe plugged in.

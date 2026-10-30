@@ -13,19 +13,23 @@ This module has two halves:
 - Mapping: pure functions (`to_snapshot` and friends), testable without a
   network.
 
-What a status message looks like (from the open-source Home Assistant Traeger
-integrations; to be checked against a real capture, see
-scripts/capture_traeger.py):
+What a status message looks like. Field names come from the open-source Home
+Assistant Traeger integrations, and were confirmed by a real capture from a
+Pro 575 on firmware 02.02.05, switched off (tests/fixtures/traeger_off.json):
     {"status": {
-        "grill": 225, "set": 225,       # grill and set temperature
-        "units": 1,                     # 0 = °C, 1 = °F (for every temperature)
-        "system_status": 6,             # what it's doing, see GRILL_MODES
-        "connected": true,
-        "pellet_level": 80,             # %, on grills with a pellet sensor
-        "probe": 120, "probe_set": 160, "probe_con": 1,   # older built-in probe
-        "acc": [ {"type": "probe", "uuid": "...", "con": 1,
-                  "probe": {"get_temp": 120, "set_temp": 160, "alarm_fired": false}} ]
-    }, "details": {...}, "settings": {...}, ...}
+        "grill": 16, "set": 75,         # grill and set temperature
+        "units": 0,                     # 0 = °C, 1 = °F (for every temperature)
+        "system_status": 99,            # what it's doing, see GRILL_MODES
+        "time": 1788634514,             # when the grill sent it (epoch seconds)
+        "connected": false,
+        "pellet_level": 30,             # %, on grills with a pellet sensor
+        "probe": 0, "probe_set": 0, "probe_con": 0, "probe_alarm_fired": 0,
+        "acc": [ {"type": "probe", "uuid": "p0", "channel": "p0", "con": 0,
+                  "probe": {"get_temp": 0, "set_temp": 0, "alarm_fired": 0}} ]
+    }, "details": {...}, "settings": {...}, "usage": {...}, ...}
+Still unconfirmed until a capture of a cook: the codes while lit (igniting 4
+to cooling down 8) and a plugged-in probe.
+
 The list of grills (GET /users/self "things") gives each grill's thingName,
 friendlyName (your name for it) and deviceTypeId (its model, see MODELS).
 """
@@ -75,6 +79,9 @@ MODELS = {"2104": "Pro 575"}
 
 # Longest grill name shown, so a long one can't break a screen's layout.
 MAX_NAME_LENGTH = 20
+
+# How far ahead of our clock a grill's own timestamp may be and still be believed.
+CLOCK_SLACK_SECONDS = 300
 
 # How long the first fetch waits to hear the list of grills.
 STARTUP_SECONDS = 20.0
@@ -178,9 +185,9 @@ def to_snapshot(
         if message is None:
             found_grills.append(silent_grill(info, listening_since))
             continue
-        seen = datetime.fromtimestamp(message.received_at, UTC)
         status = message.payload.get("status")
         status = status if isinstance(status, dict) else {}
+        seen = status_time(status, message.received_at)
         found_grills.append(to_grill(info, status, seen))
         probes.extend(to_probes(thing, status, seen))
     return Snapshot(
@@ -244,7 +251,7 @@ def to_probes(thing: str, status: Mapping[str, Any], seen: datetime) -> list[Pro
                     f"{thing}-{which}",
                     to_celsius(reading.get("get_temp"), in_f),
                     to_target(reading.get("set_temp"), in_f),
-                    reading.get("alarm_fired") is True,
+                    reading.get("alarm_fired") in (True, 1),
                     seen,
                 )
             )
@@ -256,7 +263,7 @@ def to_probes(thing: str, status: Mapping[str, Any], seen: datetime) -> list[Pro
                 f"{thing}-probe",
                 to_celsius(status.get("probe"), in_f),
                 to_target(status.get("probe_set"), in_f),
-                False,
+                status.get("probe_alarm_fired") == 1,
                 seen,
             )
         )
@@ -280,6 +287,23 @@ def to_probe(
 
 
 # ------------------------------------------------------------------ helpers ---
+
+
+def status_time(status: Mapping[str, Any], received_at: float) -> datetime:
+    """When the grill last reported this status.
+
+    Traeger's cloud keeps a grill's last status and sends it again when asked,
+    even if the grill has been off for weeks (a real capture: received in
+    October, "time" from 5 September). So "time", the grill's own timestamp,
+    is what says how fresh the status is. Without a believable one (missing,
+    or later than when it arrived), the time it arrived is used instead.
+    """
+    stamp = status.get("time")
+    if isinstance(stamp, bool) or not isinstance(stamp, int | float):
+        return datetime.fromtimestamp(received_at, UTC)
+    if 0 < stamp <= received_at + CLOCK_SLACK_SECONDS:
+        return datetime.fromtimestamp(stamp, UTC)
+    return datetime.fromtimestamp(received_at, UTC)
 
 
 def uses_fahrenheit(status: Mapping[str, Any]) -> bool:

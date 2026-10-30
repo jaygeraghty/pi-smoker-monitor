@@ -1,0 +1,198 @@
+{
+  "grills": [
+    {
+      "thingName": "GRILL-1",
+      "friendlyName": "My Traeger",
+      "deviceTypeId": "2104",
+      "userId": "VALUE-3",
+      "status": "CONFIRMED",
+      "productId": null,
+      "grillModel": null
+    }
+  ],
+  "messages": [
+    {
+      "topic_thing": "GRILL-1",
+      "seconds_after_start": 1.5,
+      "payload": {
+        "thingName": "GRILL-1",
+        "jobs": [
+          {
+            "currentStatus": {
+              "status": "REJECTED",
+              "timestamp": 1770565535
+            },
+            "isFinished": true,
+            "isInProgress": false,
+            "jobId": "Link_Combined_Pro575_020205_04017",
+            "thingName": "GRILL-1"
+          }
+        ],
+        "status": {
+          "ambient": 18,
+          "connected": false,
+          "cook_id": "",
+          "cook_timer_complete": 0,
+          "cook_timer_end": 0,
+          "cook_timer_start": 0,
+          "current_cycle": 0,
+          "current_step": 0,
+          "errors": 0,
+          "grill": 16,
+          "in_custom": 0,
+          "keepwarm": 0,
+          "pellet_level": 30,
+          "probe": 0,
+          "probe_alarm_fired": 0,
+          "probe_con": 0,
+          "probe_set": 0,
+          "real_time": 0,
+          "server_status": 1,
+          "set": 75,
+          "smoke": 0,
+          "sys_timer_complete": 1,
+          "sys_timer_end": 0,
+          "sys_timer_start": 0,
+          "system_status": 99,
+          "time": 1788634514,
+          "units": 0,
+          "acc": [
+            {
+              "channel": "VALUE-4",
+              "con": 0,
+              "type": "probe",
+              "uuid": "VALUE-4",
+              "probe": {
+                "alarm_fired": 0,
+                "get_temp": 0,
+                "set_temp": 0
+              }
+            }
+          ]
+        },
+        "features": {
+          "cold_smoke_enabled": 0,
+          "grill_mode_enabled": 0,
+          "open_loop_mode_enabled": 0,
+          "pellet_sensor_connected": 1,
+          "pellet_sensor_enabled": 1,
+          "super_smoke_enabled": 0,
+          "time": 1750529430,
+          "limits": {
+            "max_grill_temp": 500
+          }
+        },
+        "limits": {
+          "max_grill_temp": 500
+        },
+        "settings": {
+          "config_version": "04.017",
+          "device_type_id": 2104,
+          "feature": 0,
+          "fw_build_num": "20240719.125005",
+          "fw_version": "02.02.05",
+          "language": 0,
+          "rssi": -78,
+          "speaker": 0,
+          "ssid": "VALUE-5",
+          "time": 1788625198,
+          "units": 0
+        },
+        "usage": {
+          "auger": 664652,
+          "cook_cycles": 52,
+          "error_stats": {
+            "auger_disco": 0,
+            "auger_ovrcur": 0,
+            "bad_thermocouple": 1,
+            "fan_disco": 0,
+            "ign_disco": 0,
+            "ignite_fail": 0,
+            "low_ambient": 0,
+            "lowtemp": 0,
+            "overheat": 0
+          },
+          "fan": 736404,
+          "grease_trap_clean_countdown": 6,
+          "grill_clean_countdown": 779,
+          "hotrod": 130097,
+          "runtime": 738888,
+          "time": 1788616355
+        },
+        "custom_cook": {
+          "cook_cycles": [
+            {
+              "cycle_name": "VALUE-6",
+              "populated": 1,
+              "num_steps": 1,
+              "units": 0,
+              "slot_num": 0,
+              "steps": [
+                {
+                  "probe_set_temp": 75,
+                  "time_set": 0,
+                  "keepwarm": 0,
+                  "smoke": 0,
+                  "step_num": 1,
+                  "set_temp": 220,
+                  "use_timer": 0
+                }
+              ]
+            },
+            {
+              "cycle_name": "VALUE-7",
+              "populated": 1,
+              "num_steps": 2,
+              "units": 0,
+              "slot_num": 1,
+              "steps": [
+                {
+                  "probe_set_temp": -15,
+                  "time_set": 12600,
+                  "keepwarm": 0,
+                  "smoke": 0,
+                  "step_num": 1,
+                  "set_temp": 75,
+                  "use_timer": 1
+                },
+                {
+                  "probe_set_temp": 85,
+                  "time_set": 0,
+                  "keepwarm": 0,
+                  "smoke": 0,
+                  "step_num": 2,
+                  "set_temp": 105,
+                  "use_timer": 0
+                }
+              ]
+            },
+            {
+              "slot_num": 2,
+              "populated": 0
+            },
+            {
+              "slot_num": 3,
+              "populated": 0
+            },
+            {
+              "slot_num": 4,
+              "populated": 0
+            }
+          ]
+        },
+        "details": {
+          "friendlyName": "My Traeger",
+          "lastConnectedOn": 1788625197,
+          "lat": "VALUE-8",
+          "long": "VALUE-9",
+          "thingName": "GRILL-1",
+          "thingNameLower": "VALUE-10",
+          "userId": "VALUE-3",
+          "deviceType": "2104"
+        },
+        "stateIndex": 16025,
+        "schemaVersion": "1.0"
+      }
+    }
+  ]
+}
