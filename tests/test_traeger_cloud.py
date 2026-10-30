@@ -7,6 +7,7 @@ can ever send is "90" (send me your status).
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -105,6 +106,53 @@ async def test_wrong_password_says_so_without_the_password(
     with pytest.raises(SourceError, match="email and password") as caught:
         await cloud._log_in()
     assert "grill-pw" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("reply", "words"),
+    [
+        (
+            {"__type": "UserNotFoundException", "message": "User does not exist."},
+            "UserNotFoundException: User does not exist.",
+        ),
+        (
+            {"__type": "NotAuthorizedException", "message": "Password attempts exceeded"},
+            "Password attempts exceeded",
+        ),
+        (
+            {
+                "__type": "InvalidParameterException",
+                "message": "USER_PASSWORD_AUTH flow not enabled",
+            },
+            "flow not enabled",
+        ),
+    ],
+)
+async def test_login_failure_gives_amazons_reason(
+    reply: dict[str, Any], words: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cloud = cloud_answering(reply, monkeypatch)
+    with pytest.raises(SourceError, match=words):
+        await cloud._log_in()
+
+
+async def test_password_is_scrubbed_from_the_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    reply = {"__type": "NotAuthorizedException", "message": "bad grill-pw"}
+    cloud = cloud_answering(reply, monkeypatch)
+    with pytest.raises(SourceError) as caught:
+        await cloud._log_in()
+    assert "grill-pw" not in str(caught.value)
+
+
+async def test_email_is_sent_without_stray_spaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    cloud = TraegerCloud(replace(SETTINGS, email="  grill@example.com "))
+    session = FakeSession({"AuthenticationResult": {"IdToken": "tok"}})
+    monkeypatch.setattr(cloud, "_http", lambda: session)
+    await cloud._log_in()
+    sent = session.sent[0]
+    assert sent["AuthParameters"]["USERNAME"] == "grill@example.com"
+    assert sent["AuthParameters"]["PASSWORD"] == "grill-pw"  # as typed, plain text
+    assert sent["AuthFlow"] == "USER_PASSWORD_AUTH"
 
 
 async def test_odd_login_reply_fails_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:

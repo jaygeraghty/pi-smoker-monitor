@@ -195,7 +195,7 @@ class TraegerCloud:
             "AuthFlow": "USER_PASSWORD_AUTH",
             "ClientId": self._settings.client_id,
             "AuthParameters": {
-                "USERNAME": self._settings.email,
+                "USERNAME": self._settings.email.strip(),
                 "PASSWORD": self._settings.password,
             },
             "ClientMetadata": {},
@@ -212,11 +212,7 @@ class TraegerCloud:
 
         result = reply.get("AuthenticationResult") if isinstance(reply, dict) else None
         if not isinstance(result, dict) or not isinstance(result.get("IdToken"), str):
-            # Never include the reply: keep the message short and password-free.
-            kind = reply.get("__type", "") if isinstance(reply, dict) else ""
-            if "NotAuthorized" in str(kind):
-                raise SourceError("Traeger login failed: check [traeger_mqtt] email and password")
-            raise SourceError("Traeger login failed")
+            raise SourceError(login_failure(reply, self._settings.password))
         self._token = result["IdToken"]
         self._token_expires = asked_at + float(result.get("ExpiresIn", 3600))
         return self._token
@@ -225,6 +221,29 @@ class TraegerCloud:
         if self._session is None:
             self._session = aiohttp.ClientSession(timeout=self._timeout)
         return self._session
+
+
+def login_failure(reply: object, password: str) -> str:
+    """A message saying why Traeger refused the login, safe to show.
+
+    Includes Amazon's own reason (e.g. "Incorrect username or password.",
+    "User does not exist.", "Password attempts exceeded"), which is what tells
+    a wrong password apart from a wrong email or a locked account. The
+    password itself is scrubbed out, just in case.
+    """
+    if not isinstance(reply, dict):
+        return "Traeger login failed (unexpected reply)"
+    kind = str(reply.get("__type", "")).rsplit("#", 1)[-1]
+    reason = str(reply.get("message") or reply.get("Message") or "")[:120]
+    if "ChallengeName" in reply:
+        reason = f"Traeger asked for an extra step ({reply['ChallengeName']})"
+    detail = ": ".join(part for part in (kind, reason) if part) or "no reason given"
+    if password:
+        detail = detail.replace(password, "***")
+    hint = ""
+    if kind == "NotAuthorizedException" or kind == "UserNotFoundException":
+        hint = " - check [traeger_mqtt] email and password"
+    return f"Traeger login failed ({detail}){hint}"
 
 
 def decode(topic: str, payload: object) -> GrillMessage | None:
