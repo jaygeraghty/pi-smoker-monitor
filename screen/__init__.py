@@ -1,1 +1,0 @@
-"""The touchscreen: draws state/status.json on the Pi's screen."""
