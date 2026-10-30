@@ -56,7 +56,6 @@ def draw_top_bar(draw: ImageDraw.ImageDraw, status: dict[str, Any], now: datetim
         draw.text((x, 16), label, font=font(18), fill=colour, anchor="ra")
         x -= int(draw.textlength(label, font=font(18))) + 20
     return 52
-    
 
 
 # ------------------------------------------------------------------ pits ---
@@ -136,4 +135,3 @@ def extra_line(pit: dict[str, Any]) -> str:
         else:
             parts.append(f"{detail['label']} {detail['value']}")
     return " · ".join(parts[:2])
-
