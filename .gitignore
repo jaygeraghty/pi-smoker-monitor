@@ -43,3 +43,6 @@ replit.md
 
 # Deskless (phone editor) project settings
 .deskless/
+
+# Screen previews (scripts/preview_screen.py)
+screen.png

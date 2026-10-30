@@ -19,6 +19,7 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9",
     "aiomqtt>=2.0",  # Traeger: listening to the grill's status (read-only)
+    "pillow>=11.0",  # the screen: drawing it
     "thermoworks-cloud>=0.1.16",
 ]
 

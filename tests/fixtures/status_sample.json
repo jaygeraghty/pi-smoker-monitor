@@ -1,0 +1,145 @@
+{
+  "schema": 2,
+  "updated_at": "2026-10-31T21:42:00+00:00",
+  "sound_on": false,
+  "sources": [
+    {
+      "name": "ETI Cloud",
+      "ok": true,
+      "error": null
+    },
+    {
+      "name": "Traeger",
+      "ok": true,
+      "error": null
+    }
+  ],
+  "alarms": [],
+  "pits": [
+    {
+      "id": "eti:GATEWAY-1",
+      "source": "ETI Cloud",
+      "kind": "gateway",
+      "name": "RFX GATEWAY",
+      "fresh": true,
+      "last_seen": "2026-10-31T21:42:00+00:00",
+      "temp_c": 112.0,
+      "set_c": 110.0,
+      "high_c": 123.9,
+      "low_c": 96.1,
+      "fan": "pulsing",
+      "fan_output_pct": null,
+      "pellet_pct": null,
+      "details": [
+        {
+          "label": "Battery",
+          "value": "75%"
+        },
+        {
+          "label": "Wi-Fi",
+          "value": "-62 dBm"
+        }
+      ]
+    },
+    {
+      "id": "traeger:GRILL-1",
+      "source": "Traeger",
+      "kind": "grill",
+      "name": "Grilly Wonka",
+      "fresh": true,
+      "last_seen": "2026-10-31T21:42:00+00:00",
+      "temp_c": 104.0,
+      "set_c": 107.0,
+      "high_c": 121.0,
+      "low_c": 93.0,
+      "fan": null,
+      "fan_output_pct": null,
+      "pellet_pct": 70,
+      "details": [
+        {
+          "label": "Status",
+          "value": "cooking"
+        },
+        {
+          "label": "Pellets",
+          "value": "70%"
+        },
+        {
+          "label": "Outside",
+          "value": "12\u00b0C"
+        },
+        {
+          "label": "Wi-Fi",
+          "value": "-78 dBm"
+        }
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "id": "eti:PROBE-1",
+      "source": "ETI Cloud",
+      "name": "white probe",
+      "rings": [
+        "white"
+      ],
+      "fresh": true,
+      "last_seen": "2026-10-31T21:42:00+00:00",
+      "core_c": 68.2,
+      "sensors_c": [
+        68.2,
+        70.1
+      ],
+      "target_c": 95.0,
+      "low_c": null,
+      "battery_pct": 100
+    },
+    {
+      "id": "eti:PROBE-2",
+      "source": "ETI Cloud",
+      "name": "brisket",
+      "rings": [
+        "pink"
+      ],
+      "fresh": true,
+      "last_seen": "2026-10-31T21:42:00+00:00",
+      "core_c": 54.0,
+      "sensors_c": [
+        54.0
+      ],
+      "target_c": 93.0,
+      "low_c": null,
+      "battery_pct": 90
+    },
+    {
+      "id": "traeger:GRILL-1-p0",
+      "source": "Traeger",
+      "name": "Traeger probe",
+      "rings": [],
+      "fresh": true,
+      "last_seen": "2026-10-31T21:42:00+00:00",
+      "core_c": 61.5,
+      "sensors_c": [
+        61.5
+      ],
+      "target_c": 74.0,
+      "low_c": null,
+      "battery_pct": null
+    },
+    {
+      "id": "eti:PROBE-3",
+      "source": "ETI Cloud",
+      "name": "RFX MEAT",
+      "rings": [],
+      "fresh": false,
+      "last_seen": "2026-10-31T12:42:00+00:00",
+      "core_c": 22.5,
+      "sensors_c": [
+        22.5
+      ],
+      "target_c": null,
+      "low_c": null,
+      "battery_pct": 100
+    }
+  ]
+}
