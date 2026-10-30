@@ -5,11 +5,13 @@ temperatures, shows them on a touchscreen and sounds a proper alarm when
 something needs you — loud enough to wake you during an overnight cook.
 
 Works with ETI/ThermoWorks **RFX** probes, the **RFX Gateway** and the
-**Billows** fan via ETI Cloud. A DIY Pi-based pit controller is planned as a
-second data source.
+**Billows** fan via ETI Cloud, and (read-only) with **Traeger** WiFIRE grills
+via Traeger's cloud. It never sends commands to a Traeger. A DIY Pi-based pit
+controller is planned as another data source.
 
 > Not affiliated with or endorsed by ETI (Electronic Temperature Instruments
-> Ltd) or ThermoWorks. Product names are used only to describe compatibility.
+> Ltd), ThermoWorks or Traeger. Product names are used only to describe
+> compatibility.
 
 ## Status
 
@@ -18,9 +20,10 @@ Early development. See [docs/roadmap.md](docs/roadmap.md) for milestones.
 ## How it works
 
 ```
-RFX probes ─► RFX Gateway ─► ETI Cloud ─► pi-smoker-monitor ─► screen
-Billows fan ─┘                              │                ├► speaker + button
-                                            └ alarm rules ───┴► Pushover (optional)
+RFX probes ─► RFX Gateway ─► ETI Cloud ──┐
+Billows fan ─┘                            ├► pi-smoker-monitor ─► screen
+Traeger grill + probe ─► Traeger cloud ───┘   │                ├► speaker + button
+                                              └ alarm rules ───┴► Pushover (optional)
 ```
 
 The core logic (models and alarm rules) knows nothing about ETI Cloud, GPIO or

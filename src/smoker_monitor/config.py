@@ -48,6 +48,7 @@ class TraegerSettings:
     email: str
     password: str = field(repr=False)
     client_id: str
+    poll_seconds: int = 30  # [traeger_mqtt] poll_seconds, else [polling] interval_seconds
 
 
 @dataclass(frozen=True)
@@ -104,11 +105,13 @@ def load_config(path: Path) -> Config:
             email=_get_str(data, "traeger_mqtt", "email"),
             password=_get_str(data, "traeger_mqtt", "password"),
             client_id=_get_str(data, "traeger_mqtt", "client_id"),
+            poll_seconds=_poll_seconds(data, "traeger_mqtt", interval),
         )
 
-    # Traeger settings are read, but it can't be monitored yet, so it doesn't count.
-    if eti_cloud is None:
-        raise ConfigError("Nothing to monitor: add an [eti_cloud] section to the config")
+    if eti_cloud is None and traeger_mqtt is None:
+        raise ConfigError(
+            "Nothing to monitor: add an [eti_cloud] or [traeger_mqtt] section to the config"
+        )
 
     return Config(
         eti_cloud=eti_cloud,
