@@ -8,19 +8,23 @@ it will be added too.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from smoker_monitor.config import TraegerSettings
-from smoker_monitor.domain.models import GrillMode
+from smoker_monitor.domain.alarms import AlarmRules, evaluate
+from smoker_monitor.domain.models import GrillMode, Snapshot
 from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.traeger import (
     TraegerSource,
     friendly_name,
     percent,
+    status_time,
     to_celsius,
     to_snapshot,
 )
@@ -48,7 +52,12 @@ COOKING: dict[str, Any] = {
             },
             {"type": "probe", "uuid": "p2", "con": 0, "probe": {"get_temp": 70}},
         ],
-    }
+        "ambient": 50,
+        "keepwarm": 0,
+        "smoke": 1,
+    },
+    "features": {"pellet_sensor_connected": 1},
+    "settings": {"rssi": -61},
 }
 
 
@@ -234,3 +243,91 @@ def test_source_identity() -> None:
         False,
         30,
     )
+
+
+# ---------------------------------------------------------- real capture ---
+
+FIXTURE = Path(__file__).parent / "fixtures" / "traeger_off.json"
+
+
+def real_capture() -> Snapshot:
+    """The real (redacted) capture: a Pro 575, switched off since 5 September."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    latest = {
+        m["topic_thing"]: GrillMessage(m["topic_thing"], m["payload"], RECEIVED.timestamp())
+        for m in raw["messages"]
+    }
+    return to_snapshot(raw["grills"], latest, STARTED)
+
+
+def test_real_capture_grill() -> None:
+    [grill] = real_capture().grills
+    assert grill.id == "traeger:GRILL-1"
+    assert (grill.label, grill.name) == ("Pro 575", "My Traeger")
+    assert grill.mode is GrillMode.OFFLINE
+    assert not grill.connected
+    assert grill.celsius() == 16.0  # units 0: already °C
+    assert grill.set_temp_celsius == 75.0
+    assert grill.pellet_pct == 30
+
+
+def test_real_capture_is_dated_by_the_grill_not_by_arrival() -> None:
+    """The cloud resent a status from 5 September; it must not look fresh."""
+    [grill] = real_capture().grills
+    assert grill.last_seen == datetime(2026, 9, 5, 18, 55, 14, tzinfo=UTC)
+
+
+def test_real_capture_has_no_probe_plugged_in() -> None:
+    assert real_capture().probes == ()
+
+
+def test_real_capture_raises_no_alarms() -> None:
+    """Off for weeks, pellets at 30%: nothing to wake anyone for."""
+    snapshot = real_capture()
+    assert evaluate(snapshot, RECEIVED, AlarmRules()) == ()
+
+
+@pytest.mark.parametrize(
+    ("stamp", "expected"),
+    [
+        (RECEIVED.timestamp() - 60, RECEIVED - timedelta(seconds=60)),
+        (RECEIVED.timestamp() + 3600, RECEIVED),  # from the future: not believed
+        (None, RECEIVED),
+        ("1788634514", RECEIVED),
+    ],
+)
+def test_status_time(stamp: object, expected: datetime) -> None:
+    assert status_time({"time": stamp}, RECEIVED.timestamp()) == expected
+
+
+def test_older_probe_alarm_flag_is_read() -> None:
+    status = {"units": 0, "probe": 96, "probe_set": 95, "probe_con": 1, "probe_alarm_fired": 1}
+    [probe] = cooking_snapshot({"status": status}).probes
+    assert probe.alarms.high is not None and probe.alarms.high.alarming
+
+
+# ----------------------------------------------------------------- extras ---
+
+
+def test_cooking_grill_extras() -> None:
+    [grill] = cooking_snapshot().grills
+    assert grill.ambient_celsius == 10.0  # 50 °F
+    assert grill.wifi_dbm == -61
+    assert grill.super_smoke and not grill.keep_warm
+
+
+def test_pellets_ignored_without_a_pellet_sensor() -> None:
+    """Without the sensor, pellet_level could read 0 and set off "pellets low"."""
+    no_sensor = {**COOKING, "features": {"pellet_sensor_connected": 0}}
+    [grill] = cooking_snapshot(no_sensor).grills
+    assert grill.pellet_pct is None
+    no_features = {"status": COOKING["status"]}
+    [grill] = cooking_snapshot(no_features).grills
+    assert grill.pellet_pct is None
+
+
+def test_real_capture_extras() -> None:
+    [grill] = real_capture().grills
+    assert grill.ambient_celsius == 18.0
+    assert grill.wifi_dbm == -78
+    assert not grill.keep_warm and not grill.super_smoke

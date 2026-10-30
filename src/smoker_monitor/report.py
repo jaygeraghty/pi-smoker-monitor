@@ -186,6 +186,18 @@ def format_grill(grill: Grill, now: datetime, fresh: bool, name: str) -> list[st
     ]
     if grill.pellet_pct is not None:
         lines.append(f"  Pellets: {format_percent(grill.pellet_pct)}")
+    extras = []
+    if grill.ambient_celsius is not None:
+        extras.append(f"outside {format_temp(grill.ambient_celsius)}")
+    if grill.wifi_dbm is not None:
+        extras.append(f"Wi-Fi {format_dbm(grill.wifi_dbm)}")
+    extras += [
+        name
+        for name, on in (("Keep Warm", grill.keep_warm), ("Super Smoke", grill.super_smoke))
+        if on
+    ]
+    if extras:
+        lines.append(f"  Also:    {', '.join(extras)}")
     return lines
 
 

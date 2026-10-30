@@ -179,8 +179,16 @@ def grill_status(
     details = [{"label": "Status", "value": grill.mode.value}]
     if grill.pellet_pct is not None:
         details.append({"label": "Pellets", "value": format_percent(grill.pellet_pct)})
+    if grill.ambient_celsius is not None:
+        details.append({"label": "Outside", "value": f"{grill.ambient_celsius:.0f}°C"})
     if not grill.connected:
         details.append({"label": "Wi-Fi", "value": "not connected"})
+    elif grill.wifi_dbm is not None:
+        details.append({"label": "Wi-Fi", "value": format_dbm(grill.wifi_dbm)})
+    if grill.keep_warm:
+        details.append({"label": "Keep Warm", "value": "on"})
+    if grill.super_smoke:
+        details.append({"label": "Super Smoke", "value": "on"})
 
     return {
         "id": grill.id,

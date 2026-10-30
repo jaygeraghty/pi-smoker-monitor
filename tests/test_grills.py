@@ -245,6 +245,20 @@ def test_cooking_grill_as_a_pit() -> None:
     }
 
 
+def test_grill_extras_in_status_and_report() -> None:
+    extra = replace(grill(), ambient_celsius=12.4, wifi_dbm=-78, keep_warm=True)
+    [pit] = build_status(snapshot(extra), AlarmState(), NOW, RULES)["pits"]
+    assert pit["details"] == [
+        {"label": "Status", "value": "cooking"},
+        {"label": "Pellets", "value": "80%"},
+        {"label": "Outside", "value": "12°C"},
+        {"label": "Wi-Fi", "value": "-78 dBm"},
+        {"label": "Keep Warm", "value": "on"},
+    ]
+    report = format_snapshot(snapshot(extra), NOW)
+    assert "  Also:    outside 12.4°C, Wi-Fi -78 dBm, Keep Warm" in report
+
+
 def test_switched_off_grill_has_no_target_or_limits() -> None:
     off = grill(mode=GrillMode.SHUT_DOWN, set_to=110.0)
     [pit] = build_status(snapshot(off), AlarmState(), NOW, RULES)["pits"]
