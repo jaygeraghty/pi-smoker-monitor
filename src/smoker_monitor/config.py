@@ -161,6 +161,15 @@ def load_alarm_rules(data: dict[str, Any]) -> AlarmRules:
         source_unreachable_minutes=_alarm_int(
             table, "source_unreachable_minutes", defaults.source_unreachable_minutes, 1, 1440
         ),
+        grill_timeout=_alarm_bool(table, "grill_timeout", defaults.grill_timeout),
+        grill_timeout_minutes=_alarm_int(
+            table, "grill_timeout_minutes", defaults.grill_timeout_minutes, 1, 1440
+        ),
+        grill_off_target=_alarm_bool(table, "grill_off_target", defaults.grill_off_target),
+        grill_off_target_c=_alarm_int(
+            table, "grill_off_target_c", defaults.grill_off_target_c, 1, 100
+        ),
+        pellets_low_pct=_alarm_int(table, "pellets_low_pct", defaults.pellets_low_pct, 0, 100),
     )
 
 

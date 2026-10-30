@@ -5,9 +5,9 @@ page on your phone). Keeping the screens separate means a bug in a screen can
 never stop an alarm.
 
 The file describes the cook, not the brand, in three lists:
-- pits: every pit (cooking chamber) temperature, whatever reports it. Today
-  that's the RFX Gateway's pit probe; later a Traeger grill too. "kind" says
-  which ("gateway" or "grill"). Each has its temperature, set temperature,
+- pits: every pit (cooking chamber) temperature, whatever reports it: the RFX
+  Gateway's pit probe, or a grill such as a Traeger. "kind" says which
+  ("gateway" or "grill"). Each has its temperature, set temperature,
   alarm limits, what the fan is doing, and "details": brand-specific extras
   as ready-to-print label/value lines (e.g. Battery 75%).
 - probes: food temperatures, with each probe's name, ring colours and target.
@@ -36,8 +36,8 @@ from typing import Any
 
 from smoker_monitor.domain.alarm_state import AlarmState, TrackedAlarm
 from smoker_monitor.domain.alarms import AlarmRules, is_fresh
-from smoker_monitor.domain.models import AlarmLimit, Gateway, Probe, Snapshot
-from smoker_monitor.domain.names import gateway_names, probe_names
+from smoker_monitor.domain.models import AlarmLimit, Gateway, Grill, GrillMode, Probe, Snapshot
+from smoker_monitor.domain.names import gateway_names, grill_names, probe_names
 from smoker_monitor.report import (
     describe_alarm,
     format_dbm,
@@ -92,6 +92,7 @@ def build_status(
     """
     names = probe_names(snapshot.probes)
     hubs = gateway_names(snapshot.gateways)
+    grills = grill_names(snapshot.grills)
     return {
         "schema": SCHEMA_VERSION,
         "updated_at": now.isoformat(),
@@ -104,6 +105,10 @@ def build_status(
         "pits": [
             pit_status(gateway, hubs[gateway.id], snapshot.source_name(gateway.source), now, rules)
             for gateway in snapshot.gateways
+        ]
+        + [
+            grill_status(grill, grills[grill.id], snapshot.source_name(grill.source), now, rules)
+            for grill in snapshot.grills
         ],
         "probes": [
             probe_status(probe, names[probe.id], snapshot.source_name(probe.source), now, rules)
@@ -150,6 +155,47 @@ def pit_status(
         "low_c": limit_c(gateway.pit_alarms.low),
         "fan": fan,
         "fan_output_pct": fan_output_pct,
+        "pellet_pct": None,  # only grills have pellets
+        "details": details,
+    }
+
+
+def grill_status(
+    grill: Grill, name: str, source: str, now: datetime, rules: AlarmRules
+) -> dict[str, Any]:
+    """A grill (e.g. a Traeger) as a pit. `name` is its display name (see
+    domain/names.py); `source` is its source's name.
+
+    high_c and low_c are the "off target" limits (set temperature plus or minus
+    [alarms] grill_off_target_c), shown only while they apply: when cooking.
+    """
+    fresh = is_fresh(grill.last_seen, now, timedelta(minutes=rules.grill_timeout_minutes))
+    target = grill.set_temp_celsius if grill.mode.is_on else None
+    high_c = low_c = None
+    if rules.grill_off_target and grill.mode is GrillMode.COOKING and target is not None:
+        high_c = target + rules.grill_off_target_c
+        low_c = target - rules.grill_off_target_c
+
+    details = [{"label": "Status", "value": grill.mode.value}]
+    if grill.pellet_pct is not None:
+        details.append({"label": "Pellets", "value": format_percent(grill.pellet_pct)})
+    if not grill.connected:
+        details.append({"label": "Wi-Fi", "value": "not connected"})
+
+    return {
+        "id": grill.id,
+        "source": source,
+        "kind": "grill",
+        "name": name,
+        "fresh": fresh,
+        "last_seen": grill.last_seen.isoformat(),
+        "temp_c": grill.celsius(),
+        "set_c": target,
+        "high_c": high_c,
+        "low_c": low_c,
+        "fan": None,  # a grill's fan isn't reported
+        "fan_output_pct": None,
+        "pellet_pct": grill.pellet_pct,
         "details": details,
     }
 

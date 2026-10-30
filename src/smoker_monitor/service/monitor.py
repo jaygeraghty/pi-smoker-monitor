@@ -36,7 +36,7 @@ from pathlib import Path
 from smoker_monitor.domain.alarm_state import AlarmState, silence_all, step
 from smoker_monitor.domain.alarms import AlarmRules, evaluate, fresh_probes, is_fresh
 from smoker_monitor.domain.models import Snapshot, SourceHealth
-from smoker_monitor.domain.names import gateway_names, probe_names
+from smoker_monitor.domain.names import gateway_names, grill_names, probe_names
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
 from smoker_monitor.service.combine import combine
@@ -236,6 +236,15 @@ def summary(snapshot: Snapshot, state: AlarmState, now: datetime, rules: AlarmRu
             parts.append(f"{pit} stale")
         else:
             parts.append(f"{pit} {format_reading(gateway.get_pit_temp())}")
+    grill_limit = timedelta(minutes=rules.grill_timeout_minutes)
+    for grill_id, grill_name in grill_names(snapshot.grills).items():
+        grill = next(g for g in snapshot.grills if g.id == grill_id)
+        if not grill.mode.is_on:
+            parts.append(f"{grill_name} {grill.mode.value}")
+        elif not is_fresh(grill.last_seen, now, grill_limit):
+            parts.append(f"{grill_name} stale")
+        else:
+            parts.append(f"{grill_name} {format_reading(grill.celsius())}")
     for probe in snapshot.probes:
         if not is_fresh(probe.last_seen, now, probe_limit):
             parts.append(f"{names[probe.id]} stale")

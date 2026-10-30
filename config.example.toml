@@ -40,6 +40,12 @@ gateway_battery_pct = 10      # alarm below this; 0 switches it off
 probe_battery_pct = 10        # alarm below this; 0 switches it off
 source_unreachable = true     # the Pi can't get data from a source (e.g. ETI Cloud)...
 source_unreachable_minutes = 5  # ...for this many minutes
+# Grills (Traeger), only while the grill is switched on:
+grill_timeout = true          # a grill that's on has gone quiet...
+grill_timeout_minutes = 5     # ...for this many minutes
+grill_off_target = true       # cooking, but too far from its set temperature...
+grill_off_target_c = 14       # ...by more than this many °C (14 °C is about 25 °F)
+pellets_low_pct = 20          # alarm below this; 0 switches it off
 
 [notifiers.sound]
 enabled = true

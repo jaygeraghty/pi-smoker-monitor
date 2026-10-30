@@ -26,6 +26,16 @@ Timeouts:
 
 Batteries: alarm below the [alarms] percentage; 0 switches it off.
 
+Grills (e.g. a Traeger), only while switched on, so a grill sitting in the
+shed never alarms:
+- gone quiet: no report within grill_timeout_minutes.
+- off target: while cooking (not while lighting or heating up), its
+  temperature is more than grill_off_target_c above or below its set
+  temperature. Raising the set temperature mid-cook sets this off until the
+  grill catches up.
+- pellets low: below pellets_low_pct (if it has a pellet sensor); 0 switches
+  it off.
+
 Can't reach a source: when fetching from a source (e.g. ETI Cloud) fails, the
 Pi can't tell a silent Gateway from a silent internet, so that source's devices
 raise no timeout alarms. Instead, once it has failed for
@@ -39,7 +49,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from smoker_monitor.domain.models import NO_ALARMS, AlarmLimit, AlarmSettings, Snapshot
+from smoker_monitor.domain.models import (
+    NO_ALARMS,
+    AlarmLimit,
+    AlarmSettings,
+    Grill,
+    GrillMode,
+    Snapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +80,11 @@ class AlarmRules:
     probe_battery_pct: int = 10  # alarm below this; 0 switches it off
     source_unreachable: bool = True  # the Pi can't get data from a source...
     source_unreachable_minutes: int = 5  # ...for this many minutes
+    grill_timeout: bool = True  # a grill that's on has gone quiet...
+    grill_timeout_minutes: int = 5  # ...for this many minutes
+    grill_off_target: bool = True  # a cooking grill is too far from its set temperature...
+    grill_off_target_c: int = 14  # ...by more than this many °C (14 °C is about 25 °F)
+    pellets_low_pct: int = 20  # alarm below this; 0 switches it off
 
 
 class AlarmKind(StrEnum):
@@ -77,6 +99,9 @@ class AlarmKind(StrEnum):
     GATEWAY_BATTERY = "gateway_battery"  # set by gateway_battery_pct
     PROBE_BATTERY = "probe_battery"  # set by probe_battery_pct
     SOURCE_UNREACHABLE = "source_unreachable"  # the Pi can't fetch from a source
+    GRILL_TIMEOUT = "grill_timeout"
+    GRILL_OFF_TARGET = "grill_off_target"  # value: grill °C, limit: its set °C
+    PELLETS_LOW = "pellets_low"  # set by pellets_low_pct
 
 
 @dataclass(frozen=True)
@@ -185,7 +210,38 @@ def evaluate(
         if rules.probe_low:
             found.append(check_limit(AlarmKind.PROBE_LOW, probe.id, core, eti.low, mine.low, False))
 
+    for grill in snapshot.grills:
+        found.extend(grill_alarms(grill, now, rules, grill.source in failing))
+
     return tuple(alarm for alarm in found if alarm is not None)
+
+
+def grill_alarms(grill: Grill, now: datetime, rules: AlarmRules, failing: bool) -> list[Alarm]:
+    """A grill's alarms (see the module docstring). `failing`: its source is down."""
+    if not grill.mode.is_on:
+        return []  # switched off: nothing to watch
+    limit = timedelta(minutes=rules.grill_timeout_minutes)
+    if not is_fresh(grill.last_seen, now, limit):
+        if rules.grill_timeout and not failing:
+            return [timeout_alarm(AlarmKind.GRILL_TIMEOUT, grill.id, grill.last_seen, now, limit)]
+        return []
+    if grill.mode is GrillMode.COOLING_DOWN:
+        return []  # finished cooking: temperature and pellets no longer matter
+
+    found: list[Alarm] = []
+    pellets, below = grill.pellet_pct, rules.pellets_low_pct
+    if below and pellets is not None and pellets < below:
+        found.append(Alarm(AlarmKind.PELLETS_LOW, grill.id, pellets, below))
+    temp, target = grill.celsius(), grill.set_temp_celsius
+    if (
+        rules.grill_off_target
+        and grill.mode is GrillMode.COOKING
+        and temp is not None
+        and target is not None
+        and abs(temp - target) > rules.grill_off_target_c
+    ):
+        found.append(Alarm(AlarmKind.GRILL_OFF_TARGET, grill.id, temp, target))
+    return found
 
 
 def fresh_probes(snapshot: Snapshot, now: datetime, rules: AlarmRules) -> frozenset[str]:

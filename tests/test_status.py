@@ -141,6 +141,7 @@ def test_gateway_as_a_pit() -> None:
         "low_c": 96.1,
         "fan": "blowing",
         "fan_output_pct": None,
+        "pellet_pct": None,
         "details": [
             {"label": "Battery", "value": "80%"},
             {"label": "Wi-Fi", "value": "-55 dBm"},

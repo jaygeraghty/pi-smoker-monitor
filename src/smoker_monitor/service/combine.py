@@ -16,11 +16,11 @@ from dataclasses import replace
 from datetime import datetime
 from typing import TypeVar
 
-from smoker_monitor.domain.models import Gateway, Probe, Snapshot, SourceHealth
+from smoker_monitor.domain.models import Gateway, Grill, Probe, Snapshot, SourceHealth
 
 log = logging.getLogger(__name__)
 
-Device = TypeVar("Device", Gateway, Probe)
+Device = TypeVar("Device", Gateway, Grill, Probe)
 
 
 def combine(now: datetime, parts: Sequence[tuple[SourceHealth, Snapshot | None]]) -> Snapshot:
@@ -31,17 +31,20 @@ def combine(now: datetime, parts: Sequence[tuple[SourceHealth, Snapshot | None]]
     warning), so ids from different brands can never clash.
     """
     gateways: list[Gateway] = []
+    grills: list[Grill] = []
     probes: list[Probe] = []
     for health, snapshot in parts:
         if snapshot is None:
             continue
         gateways.extend(labelled(g, health.key) for g in snapshot.gateways)
+        grills.extend(labelled(g, health.key) for g in snapshot.grills)
         probes.extend(labelled(p, health.key) for p in snapshot.probes)
     return Snapshot(
         taken_at=now,
         gateways=tuple(gateways),
         probes=tuple(probes),
         sources=tuple(health for health, _ in parts),
+        grills=tuple(grills),
     )
 
 

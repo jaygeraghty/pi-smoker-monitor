@@ -11,8 +11,10 @@ code, so they are easy to test.
 - FanActivity:   what the fan is doing (blowing, pulsing or unknown).
 - Fan:           the Billows fan: connected or not, set temperature, activity.
 - Gateway:       the RFX Gateway: pit (air) probe, fan, Wi-Fi and alarm settings.
+- GrillMode:     what a grill is doing (off, preheating, cooking, ...).
+- Grill:         a cooker that reports its own temperatures (e.g. a Traeger).
 - SourceHealth:  whether one source (brand) is working right now.
-- Snapshot:      every Gateway and probe from every source, as seen at one poll.
+- Snapshot:      every Gateway, grill and probe from every source, at one poll.
 
 Rules followed throughout:
 - Temperatures are always °C. Sources convert from °F before building these.
@@ -172,6 +174,59 @@ class Gateway:
         return None
 
 
+class GrillMode(StrEnum):
+    """What a grill is doing. Sources translate their own codes into these."""
+
+    OFFLINE = "offline"  # not connected to the cloud
+    SLEEPING = "sleeping"  # switched on, screen off
+    IDLE = "idle"  # switched on, not cooking
+    IGNITING = "igniting"
+    PREHEATING = "preheating"  # heating up to its set temperature
+    COOKING = "cooking"  # holding its set temperature
+    COOLING_DOWN = "cooling down"  # burning off after being switched off
+    SHUT_DOWN = "shut down"  # finished cooling down
+    UNKNOWN = "unknown"  # a code we haven't seen yet
+
+    @property
+    def is_on(self) -> bool:
+        """Lit or being lit: igniting, preheating, cooking or cooling down."""
+        return self in {
+            GrillMode.IGNITING,
+            GrillMode.PREHEATING,
+            GrillMode.COOKING,
+            GrillMode.COOLING_DOWN,
+        }
+
+
+@dataclass(frozen=True)
+class Grill:
+    """A cooker that reports its own temperatures, e.g. a Traeger pellet grill.
+
+    Unlike a Gateway (a hub carrying a pit probe), the grill is the pit. Its
+    food probes are separate Probe objects in the Snapshot, like ETI's.
+    """
+
+    serial: str
+    label: str | None  # the model, e.g. "Pro 575"
+    last_seen: datetime
+    connected: bool  # online, as far as the grill's cloud knows
+    mode: GrillMode
+    temp: Reading | None  # the grill (cooking chamber) temperature
+    set_temp_celsius: float | None  # what it's set to, if anything
+    pellet_pct: int | None = None  # pellets left, 0-100, if it has a sensor
+    name: str | None = None  # your name for it, if you've given one
+    source: str = ""  # short name of the source that reported it, e.g. "traeger"
+
+    @property
+    def id(self) -> str:
+        """Unique across all sources, e.g. "traeger:GRILL-1" (just the serial if no source)."""
+        return f"{self.source}:{self.serial}" if self.source else self.serial
+
+    def celsius(self) -> float | None:
+        """The grill temperature, or None if there's no reading."""
+        return self.temp.celsius if self.temp is not None else None
+
+
 @dataclass(frozen=True)
 class SourceHealth:
     """How one source (brand) is doing, as of this poll."""
@@ -188,13 +243,15 @@ class Snapshot:
     """Everything known about the cook at one poll, from every source combined.
 
     A source fills in only what it has: ETI gives its Gateway and probes; a
-    brand with no hub (e.g. Meater) gives just probes.
+    Traeger gives its grill and probes; a brand with no hub (e.g. Meater) gives
+    just probes.
     """
 
     taken_at: datetime
     gateways: tuple[Gateway, ...]
     probes: tuple[Probe, ...]
     sources: tuple[SourceHealth, ...] = ()  # how each source is doing
+    grills: tuple[Grill, ...] = ()
 
     def source_name(self, key: str) -> str:
         """A source's display name, e.g. "ETI Cloud" for "eti" (the key if unknown)."""
