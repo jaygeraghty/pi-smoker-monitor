@@ -534,3 +534,35 @@ async def test_device_without_a_source_is_labelled(tmp_path: Path) -> None:
 def test_two_sources_cant_share_a_key(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="share a key"):
         two_source_monitor(tmp_path, ScriptedSource(), ScriptedSource())
+
+
+# ---------------------------------------------------------- vanished probes ---
+
+
+async def test_probe_that_vanishes_mid_cook_still_rings(tmp_path: Path) -> None:
+    """A Traeger stops listing a probe that's unplugged: it must not just disappear."""
+    later = START + timedelta(minutes=6)
+    monitor, clock, notifier = make_monitor(
+        tmp_path,
+        snapshot(START, probes=(probe(START),)),
+        snapshot(later),  # the probe is no longer listed
+        snapshot(later + POLL),
+    )
+    await monitor.poll_once()
+    clock.now = later
+    await poll_times(monitor, clock, 2)
+
+    assert monitor.snapshot is not None
+    assert [p.id for p in monitor.snapshot.probes] == ["eti:P1"]  # kept, as last seen
+    assert statuses(monitor) == {AlarmKind.PROBE_TIMEOUT: AlarmStatus.RINGING}
+    assert notifier.sound_on
+
+
+async def test_probe_never_part_of_the_cook_isnt_kept(tmp_path: Path) -> None:
+    old = START - timedelta(days=3)
+    monitor, clock, _ = make_monitor(
+        tmp_path, snapshot(START, probes=(probe(old),)), snapshot(START + POLL)
+    )
+    await poll_times(monitor, clock, 2)
+    assert monitor.snapshot is not None
+    assert monitor.snapshot.probes == ()

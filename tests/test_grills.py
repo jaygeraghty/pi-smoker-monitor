@@ -9,10 +9,10 @@ import pytest
 
 from smoker_monitor.domain.alarm_state import AlarmState
 from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules, evaluate
-from smoker_monitor.domain.models import Grill, GrillMode, Reading, Snapshot, SourceHealth
+from smoker_monitor.domain.models import Grill, GrillMode, Probe, Reading, Snapshot, SourceHealth
 from smoker_monitor.domain.names import device_names, grill_names
 from smoker_monitor.report import describe_alarm, format_snapshot
-from smoker_monitor.service.combine import combine
+from smoker_monitor.service.combine import combine, keep_vanished_probes
 from smoker_monitor.service.monitor import summary
 from smoker_monitor.service.status import build_status
 
@@ -288,3 +288,18 @@ def test_summary_line_shows_the_grill() -> None:
 def test_summary_line_says_when_the_grill_is_off() -> None:
     off = grill(mode=GrillMode.SHUT_DOWN, last_seen=NOW - timedelta(days=2))
     assert summary(snapshot(off), AlarmState(), NOW, RULES).startswith("Pro 575 shut down |")
+
+
+def test_keep_vanished_probes_only_keeps_live_ones() -> None:
+    pulled = Probe("GRILL-1-p0", "Traeger probe", None, NOW, (), source="traeger")
+    other = replace(pulled, serial="GRILL-1-p1")
+    kept = keep_vanished_probes(
+        snapshot(grill()), {pulled.id: pulled, other.id: other}, {pulled.id}
+    )
+    assert [p.id for p in kept.probes] == ["traeger:GRILL-1-p0"]
+
+
+def test_keep_vanished_probes_leaves_present_ones_alone() -> None:
+    present = Probe("GRILL-1-p0", "Traeger probe", None, NOW, (), source="traeger")
+    with_probe = replace(snapshot(grill()), probes=(present,))
+    assert keep_vanished_probes(with_probe, {present.id: present}, {present.id}) is with_probe

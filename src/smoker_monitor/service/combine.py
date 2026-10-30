@@ -11,7 +11,7 @@ Pure logic, no network: easy to test.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import replace
 from datetime import datetime
 from typing import TypeVar
@@ -46,6 +46,30 @@ def combine(now: datetime, parts: Sequence[tuple[SourceHealth, Snapshot | None]]
         sources=tuple(health for health, _ in parts),
         grills=tuple(grills),
     )
+
+
+def keep_vanished_probes(
+    snapshot: Snapshot, remembered: Mapping[str, Probe], live: Set[str]
+) -> Snapshot:
+    """Put back any probe from this cook that its source has stopped listing.
+
+    Some brands only list probes that are plugged in (a Traeger does). If one
+    falls out mid-cook it would simply vanish, and with nothing left to check,
+    no alarm could go off. So a live probe (one seen reporting this cook) that
+    has vanished is kept, as last seen. Its data then goes stale and the usual
+    "gone quiet" alarm rings after [alarms] probe_timeout_minutes.
+
+    `remembered` holds the last copy of each live probe, by id.
+    """
+    present = {probe.id for probe in snapshot.probes}
+    vanished = tuple(
+        probe
+        for probe_id, probe in remembered.items()
+        if probe_id in live and probe_id not in present
+    )
+    if not vanished:
+        return snapshot
+    return replace(snapshot, probes=snapshot.probes + vanished)
 
 
 def labelled(device: Device, key: str) -> Device:

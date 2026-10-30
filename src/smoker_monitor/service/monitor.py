@@ -4,7 +4,9 @@ It watches any number of sources (brands, e.g. ETI Cloud), each fetched on
 its own schedule (its poll_seconds). Every poll:
 1. fetch a Snapshot from each source that's due, all at once
 2. combine every source's latest Snapshot into one
-3. remember which probes are live this cook
+3. remember which probes are live this cook, and keep any of those that a
+   source has stopped listing (e.g. a Traeger probe pulled out), so they go
+   stale and "gone quiet" rings
 4. evaluate() what's wrong right now
 5. step() the alarm memory: what should be ringing
 6. write the status file for screens
@@ -35,11 +37,11 @@ from pathlib import Path
 
 from smoker_monitor.domain.alarm_state import AlarmState, silence_all, step
 from smoker_monitor.domain.alarms import AlarmRules, evaluate, fresh_probes, is_fresh
-from smoker_monitor.domain.models import Snapshot, SourceHealth
+from smoker_monitor.domain.models import Probe, Snapshot, SourceHealth
 from smoker_monitor.domain.names import gateway_names, grill_names, probe_names
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
-from smoker_monitor.service.combine import combine
+from smoker_monitor.service.combine import combine, keep_vanished_probes
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
 from smoker_monitor.sources.base import Source, SourceError
 
@@ -111,6 +113,7 @@ class Monitor:
 
         self.state = AlarmState()
         self.live_probes: set[str] = set()
+        self.remembered_probes: dict[str, Probe] = {}  # last copy of each live probe
         self.snapshot: Snapshot | None = None  # the latest combined one
 
     async def run_forever(self) -> None:
@@ -137,8 +140,12 @@ class Monitor:
         await asyncio.gather(*(self._fetch(state, now) for state in due))
 
         snapshot = combine(now, [(state.health(), state.last_good) for state in self.states])
-        self.snapshot = snapshot
         self.live_probes |= fresh_probes(snapshot, now, self.rules)
+        self.remembered_probes.update(
+            (probe.id, probe) for probe in snapshot.probes if probe.id in self.live_probes
+        )
+        snapshot = keep_vanished_probes(snapshot, self.remembered_probes, self.live_probes)
+        self.snapshot = snapshot
         alarms = evaluate(snapshot, now, self.rules, live_probes=self.live_probes)
         self.state = step(self.state, alarms, now)
 

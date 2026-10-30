@@ -19,6 +19,7 @@ import pytest
 from smoker_monitor.config import TraegerSettings
 from smoker_monitor.domain.alarms import AlarmRules, evaluate
 from smoker_monitor.domain.models import GrillMode, Snapshot
+from smoker_monitor.sources import traeger
 from smoker_monitor.sources.base import SourceError
 from smoker_monitor.sources.traeger import (
     TraegerSource,
@@ -185,10 +186,13 @@ def test_friendly_name_is_tidied() -> None:
 class FakeCloud(TraegerCloud):
     """Stands in for the real cloud: no network, prepared messages."""
 
-    def __init__(self, messages: list[dict[str, Any]], fail: Exception | None = None) -> None:
+    def __init__(
+        self, messages: list[dict[str, Any]], fail: Exception | None = None, delay: float = 0
+    ) -> None:
         super().__init__(SETTINGS)
         self.messages = messages
         self.fail = fail
+        self.delay = delay  # seconds before the first message arrives
         self.closed = False
 
     async def grills(self) -> list[dict[str, Any]]:
@@ -202,6 +206,7 @@ class FakeCloud(TraegerCloud):
         on_message: Callable[[GrillMessage], None],
         seconds: float | None = None,
     ) -> None:
+        await asyncio.sleep(self.delay)
         for payload in self.messages:
             on_message(message(payload))
         await asyncio.Event().wait()  # then stays connected
@@ -219,6 +224,24 @@ async def test_source_returns_the_latest_status() -> None:
     assert grill.mode is GrillMode.COOKING
     await source.close()
     assert cloud.closed
+
+
+async def test_first_fetch_waits_for_the_first_message() -> None:
+    """Like `smoker snapshot`: one fetch straight after connecting."""
+    source = TraegerSource(SETTINGS, FakeCloud([COOKING], delay=0.05))
+    [grill] = (await source.fetch()).grills
+    assert grill.mode is GrillMode.COOKING
+    await source.close()
+
+
+async def test_silent_grill_is_offline_after_a_short_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(traeger, "FIRST_MESSAGE_SECONDS", 0.05)
+    source = TraegerSource(SETTINGS, FakeCloud([]))
+    [grill] = (await source.fetch()).grills
+    assert grill.mode is GrillMode.OFFLINE
+    await source.close()
 
 
 async def test_source_login_failure_is_a_source_error() -> None:
