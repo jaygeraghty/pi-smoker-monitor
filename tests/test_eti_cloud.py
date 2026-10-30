@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +52,7 @@ def idle_snapshot() -> Snapshot:
 
 def idle_gateway() -> Gateway:
     """The Gateway from the real capture (it is always present there)."""
-    gateway = idle_snapshot().gateway
+    gateway = idle_snapshot().gateways[0]
     assert gateway is not None
     return gateway
 
@@ -63,7 +63,7 @@ def idle_gateway() -> Gateway:
 def test_snapshot_has_gateway_and_two_probes() -> None:
     snapshot = idle_snapshot()
     assert snapshot.taken_at == NOW
-    assert snapshot.gateway is not None
+    assert len(snapshot.gateways) == 1
     assert [p.serial for p in snapshot.probes] == ["PROBE-1", "PROBE-2"]
 
 
@@ -217,10 +217,6 @@ def test_sensor_time_is_when_value_was_saved() -> None:
     assert sensor.taken_at == datetime(2026, 9, 21, 11, 23, 35, 127000, tzinfo=UTC)
 
 
-def test_old_capture_is_stale() -> None:
-    assert idle_snapshot().is_stale(NOW, timedelta(minutes=5))
-
-
 def test_pit_alarms_come_from_eti() -> None:
     """Real data: the pit had both alarms switched on in the app (338°F / 86°F)."""
     alarms = idle_gateway().pit_alarms
@@ -276,7 +272,7 @@ def channel(number: str, value: Any, status: str = "NORMAL") -> dict[str, Any]:
 
 def test_pit_text_value_is_converted() -> None:
     raw = {"devices": [gateway_device()], "channels": {"G1": [channel("1", "230")]}}
-    gateway = to_snapshot(raw, NOW).gateway
+    gateway = to_snapshot(raw, NOW).gateways[0]
     assert gateway is not None and gateway.pit is not None
     assert gateway.pit.celsius == pytest.approx(110.0)
 
@@ -284,7 +280,7 @@ def test_pit_text_value_is_converted() -> None:
 def test_connected_fan_gives_pit_deviation() -> None:
     fan = {"connected": True, "set_temp": 225, "state": 1}
     raw = {"devices": [gateway_device(fan=fan)], "channels": {"G1": [channel("1", 230)]}}
-    gateway = to_snapshot(raw, NOW).gateway
+    gateway = to_snapshot(raw, NOW).gateways[0]
     assert gateway is not None
     assert gateway.pit_deviation() == pytest.approx(f_to_c(230) - f_to_c(225))
 
@@ -299,7 +295,7 @@ def test_channels_are_put_in_number_order() -> None:
 
 def test_gateway_without_channels_has_no_pit() -> None:
     raw = {"devices": [gateway_device()], "channels": {}}
-    gateway = to_snapshot(raw, NOW).gateway
+    gateway = to_snapshot(raw, NOW).gateways[0]
     assert gateway is not None
     assert gateway.pit is None
 
@@ -308,21 +304,28 @@ def test_missing_last_seen_counts_as_stale() -> None:
     """Fail-safe: no time at all must never look fresh."""
     raw = {"devices": [gateway_device(last_seen=None)], "channels": {}}
     snapshot = to_snapshot(raw, NOW)
-    assert snapshot.gateway is not None
-    assert snapshot.gateway.last_seen == LONG_AGO
-    assert snapshot.is_stale(NOW, timedelta(minutes=5))
+    assert snapshot.gateways[0].last_seen == LONG_AGO
 
 
 def test_no_gateway_in_data() -> None:
     snapshot = to_snapshot({"devices": [], "channels": {}}, NOW)
-    assert snapshot.gateway is None
+    assert snapshot.gateways == ()
     assert snapshot.probes == ()
+
+
+def test_every_gateway_is_kept() -> None:
+    """An account can have more than one Gateway; none is dropped."""
+    raw = {
+        "devices": [gateway_device(serial="G1"), gateway_device(serial="G2")],
+        "channels": {},
+    }
+    assert [g.id for g in to_snapshot(raw, NOW).gateways] == ["eti:G1", "eti:G2"]
 
 
 def test_unknown_device_types_are_ignored() -> None:
     raw = {"devices": [{"serial": "X1", "device_name": "node wifi"}], "channels": {}}
     snapshot = to_snapshot(raw, NOW)
-    assert snapshot.gateway is None
+    assert snapshot.gateways == ()
     assert snapshot.probes == ()
 
 
@@ -394,7 +397,7 @@ def test_probe_without_channels_has_no_alarms() -> None:
 
 def test_gateway_without_channels_has_no_pit_alarms() -> None:
     raw = {"devices": [gateway_device()], "channels": {}}
-    gateway = to_snapshot(raw, NOW).gateway
+    gateway = to_snapshot(raw, NOW).gateways[0]
     assert gateway is not None
     assert gateway.pit_alarms == NO_ALARMS
 
@@ -518,7 +521,7 @@ class FakeEti:
 async def test_source_returns_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeEti(monkeypatch, "ok")
     snapshot = await EtiCloudSource(SETTINGS).fetch()
-    assert snapshot.gateway is not None
+    assert len(snapshot.gateways) == 1
     assert len(snapshot.probes) == 2
 
 
@@ -640,7 +643,9 @@ def test_live_fetch_from_eti_cloud() -> None:
     config_path = Path("config.toml")
     if not config_path.exists():
         pytest.skip("needs config.toml with your ETI Cloud login")
-    source = EtiCloudSource(load_config(config_path).eti_cloud)
+    settings = load_config(config_path).eti_cloud
+    assert settings is not None, "config.toml has no [eti_cloud] section"
+    source = EtiCloudSource(settings)
 
     async def fetch_and_close() -> Snapshot:
         try:
@@ -649,4 +654,4 @@ def test_live_fetch_from_eti_cloud() -> None:
             await source.close()
 
     snapshot = asyncio.run(fetch_and_close())
-    assert snapshot.gateway is not None
+    assert len(snapshot.gateways) == 1

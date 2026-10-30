@@ -29,6 +29,7 @@ def main() -> None:
         Reading,
         RingColour,
         Snapshot,
+        SourceHealth,
     )
     from smoker_monitor.service.status import build_status
 
@@ -42,6 +43,7 @@ def main() -> None:
         pit=Reading(110.4, now),
         fan=Fan(set_temp_celsius=110.0, state=2, connected=True, activity=FanActivity.PULSING),
         pit_alarms=AlarmSettings(high=AlarmLimit(True, 123.9), low=AlarmLimit(True, 96.1)),
+        source="eti",
     )
     cooking = Probe(
         serial="PROBE-1",
@@ -52,6 +54,7 @@ def main() -> None:
         alarms=AlarmSettings(high=AlarmLimit(True, 95.0), low=None),
         name="white probe",
         rings=(RingColour.WHITE,),
+        source="eti",
     )
     in_the_drawer = Probe(
         serial="PROBE-2",
@@ -61,10 +64,14 @@ def main() -> None:
         sensors=(Reading(22.5, now),),
         name="pink probe",
         rings=(RingColour.PINK,),
+        source="eti",
     )
-    snapshot = Snapshot(taken_at=now, gateway=gateway, probes=(cooking, in_the_drawer))
+    eti = SourceHealth(key="eti", name="ETI Cloud", expects_gateway=True)
+    snapshot = Snapshot(
+        taken_at=now, gateways=(gateway,), probes=(cooking, in_the_drawer), sources=(eti,)
+    )
 
-    status = build_status(snapshot, AlarmState(), now, AlarmRules(), None)
+    status = build_status(snapshot, AlarmState(), now, AlarmRules())
     print(json.dumps(status, indent=2))
 
 

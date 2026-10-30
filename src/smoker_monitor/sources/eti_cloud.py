@@ -112,9 +112,14 @@ class EtiCloudSource:
     with a new login. Call `close()` when finished with it.
     """
 
+    key = SOURCE_KEY
+    name = "ETI Cloud"
+    expects_gateway = True  # ETI probes report through an RFX Gateway
+
     def __init__(
         self, settings: EtiCloudSettings, timeout_seconds: float = FETCH_TIMEOUT_SECONDS
     ) -> None:
+        self.poll_seconds = settings.poll_seconds
         self._settings = settings
         self._timeout_seconds = timeout_seconds
         self._session: ClientSession | None = None
@@ -235,21 +240,20 @@ async def fetch_channel(cloud: ThermoworksCloud, serial: str, number: int) -> di
 
 def to_snapshot(raw: dict[str, Any], now: datetime) -> Snapshot:
     """Build a Snapshot from raw ETI Cloud data, as seen at time `now`."""
-    gateway: Gateway | None = None
+    gateways: list[Gateway] = []
     probes: list[Probe] = []
 
     for device in raw.get("devices", []):
         name = (device.get("device_name") or "").lower()
         channels = raw.get("channels", {}).get(device.get("serial"), [])
 
-        # Only one Gateway is expected; if there are more, the first one wins.
-        if name == GATEWAY_NAME and gateway is None:
-            gateway = to_gateway(device, channels)
+        if name == GATEWAY_NAME:
+            gateways.append(to_gateway(device, channels))
         elif name == PROBE_NAME:
             probes.append(to_probe(device, channels))
         # Any other device type is ignored.
 
-    return Snapshot(taken_at=now, gateway=gateway, probes=tuple(probes))
+    return Snapshot(taken_at=now, gateways=tuple(gateways), probes=tuple(probes))
 
 
 def to_gateway(device: dict[str, Any], channels: list[dict[str, Any]]) -> Gateway:

@@ -81,5 +81,5 @@ def test_gateway_names() -> None:
 
 
 def test_device_names_covers_everything() -> None:
-    snapshot = Snapshot(NOW, gateway(), (probe("P1", "brisket"),))
+    snapshot = Snapshot(NOW, (gateway(),), (probe("P1", "brisket"),))
     assert device_names(snapshot) == {"G1": "RFX GATEWAY", "P1": "brisket"}

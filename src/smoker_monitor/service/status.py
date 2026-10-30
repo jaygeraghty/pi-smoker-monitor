@@ -13,6 +13,9 @@ The file describes the cook, not the brand, in three lists:
 - probes: food temperatures, with each probe's name, ring colours and target.
 - sources: whether each data source (e.g. ETI Cloud) is working.
 
+Every pit and probe names its "source", so a screen can show where it came
+from (e.g. "ETI Cloud", later "Traeger").
+
 Every pit and probe has an "id" (e.g. "eti:PROBE-1") so alarms can point at
 it; screens never show it. "fresh" is worked out here from the [alarms]
 timeouts, so screens never need the alarm rules. Each alarm carries its
@@ -32,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from smoker_monitor.domain.alarm_state import AlarmState, TrackedAlarm
-from smoker_monitor.domain.alarms import NO_DEVICE, AlarmRules, is_fresh
+from smoker_monitor.domain.alarms import AlarmRules, is_fresh
 from smoker_monitor.domain.models import AlarmLimit, Gateway, Probe, Snapshot
 from smoker_monitor.domain.names import gateway_name, probe_names
 from smoker_monitor.report import (
@@ -47,8 +50,6 @@ STATUS_FILE = "status.json"
 # Bump this whenever the shape of the file changes, so screens can tell.
 SCHEMA_VERSION = 2
 
-# What the ETI data source is called on screens.
-ETI_SOURCE = "ETI Cloud"
 
 # ------------------------------------------------------------- helpers ---
 
@@ -62,15 +63,18 @@ def limit_c(limit: AlarmLimit | None) -> float | None:
 
 def alarm_status(tracked: TrackedAlarm, snapshot: Snapshot) -> dict[str, Any]:
     """One alarm, with its plain-English message."""
-    device = None if tracked.alarm.device == NO_DEVICE else tracked.alarm.device
+    alarm = tracked.alarm
     return {
-        "kind": tracked.alarm.kind.value,
-        "device": device,  # the id of the pit or probe it's about (None: no Gateway)
+        "kind": alarm.kind.value,
+        # The id of the pit or probe it's about; None when it's about a whole
+        # source ("No gateway found", "Can't reach ...").
+        "device": None if alarm.about_source else alarm.device,
+        "source": snapshot.source_name(alarm.device) if alarm.about_source else None,
         "status": tracked.status.value,  # pending, ringing or silenced
-        "value": tracked.alarm.value,
-        "limit": tracked.alarm.limit,
+        "value": alarm.value,
+        "limit": alarm.limit,
         "since": tracked.first_seen.isoformat(),
-        "message": describe_alarm(tracked.alarm, snapshot),
+        "message": describe_alarm(alarm, snapshot),
     }
 
 
@@ -79,27 +83,34 @@ def build_status(
     state: AlarmState,
     now: datetime,
     rules: AlarmRules,
-    fetch_error: str | None,
 ) -> dict[str, Any]:
     """Everything a screen needs, as plain data ready for JSON.
 
     `rules` supplies the timeouts that decide whether each device is fresh.
-    `fetch_error` is None when the last fetch from ETI Cloud worked.
     """
     names = probe_names(snapshot.probes)
     return {
         "schema": SCHEMA_VERSION,
         "updated_at": now.isoformat(),
         "sound_on": state.sound_on,
-        "sources": [{"name": ETI_SOURCE, "ok": fetch_error is None, "error": fetch_error}],
+        "sources": [
+            {"name": source.name, "ok": source.error is None, "error": source.error}
+            for source in snapshot.sources
+        ],
         "alarms": [alarm_status(tracked, snapshot) for tracked in state.tracked.values()],
-        "pits": [] if snapshot.gateway is None else [pit_status(snapshot.gateway, now, rules)],
-        "probes": [probe_status(probe, names[probe.id], now, rules) for probe in snapshot.probes],
+        "pits": [
+            pit_status(gateway, snapshot.source_name(gateway.source), now, rules)
+            for gateway in snapshot.gateways
+        ],
+        "probes": [
+            probe_status(probe, names[probe.id], snapshot.source_name(probe.source), now, rules)
+            for probe in snapshot.probes
+        ],
     }
 
 
-def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, Any]:
-    """The RFX Gateway (and its Billows fan, if any) as a pit."""
+def pit_status(gateway: Gateway, source: str, now: datetime, rules: AlarmRules) -> dict[str, Any]:
+    """A Gateway (and its fan, if any) as a pit. `source` is its source's name."""
     fresh = is_fresh(gateway.last_seen, now, timedelta(minutes=rules.gateway_timeout_minutes))
 
     # What the fan is doing, and the temperature it's aiming for (only
@@ -122,7 +133,7 @@ def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, 
 
     return {
         "id": gateway.id,
-        "source": ETI_SOURCE,
+        "source": source,
         "kind": "gateway",  # a hub carrying a pit probe; later also "grill" (Traeger)
         "name": gateway_name(gateway),
         "fresh": fresh,
@@ -137,13 +148,16 @@ def pit_status(gateway: Gateway, now: datetime, rules: AlarmRules) -> dict[str, 
     }
 
 
-def probe_status(probe: Probe, name: str, now: datetime, rules: AlarmRules) -> dict[str, Any]:
-    """One food probe. `name` is its display name (see domain/names.py)."""
+def probe_status(
+    probe: Probe, name: str, source: str, now: datetime, rules: AlarmRules
+) -> dict[str, Any]:
+    """One food probe. `name` is its display name (see domain/names.py); `source`
+    is its source's name."""
     fresh = is_fresh(probe.last_seen, now, timedelta(minutes=rules.probe_timeout_minutes))
 
     return {
         "id": probe.id,
-        "source": ETI_SOURCE,
+        "source": source,
         "name": name,
         "rings": [ring.value for ring in probe.rings],  # only the app's colours
         "fresh": fresh,

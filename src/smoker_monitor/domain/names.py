@@ -38,7 +38,7 @@ def probe_base_name(probe: Probe) -> str:
 
 
 def probe_names(probes: Iterable[Probe]) -> dict[str, str]:
-    """Display names for every probe, keyed by serial. Duplicates are numbered."""
+    """Display names for every probe, keyed by id. Duplicates are numbered."""
     in_order = sorted(probes, key=lambda probe: probe.id)
     base = {probe.id: probe_base_name(probe) for probe in in_order}
     counts = Counter(base.values())
@@ -55,8 +55,8 @@ def probe_names(probes: Iterable[Probe]) -> dict[str, str]:
 
 
 def device_names(snapshot: Snapshot) -> dict[str, str]:
-    """Display names for every device in the Snapshot, keyed by serial."""
+    """Display names for every device in the Snapshot, keyed by id."""
     names = probe_names(snapshot.probes)
-    if snapshot.gateway is not None:
-        names[snapshot.gateway.id] = gateway_name(snapshot.gateway)
+    for gateway in snapshot.gateways:
+        names[gateway.id] = gateway_name(gateway)
     return names

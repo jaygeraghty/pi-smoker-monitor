@@ -161,44 +161,20 @@ def test_deviation_none_without_pit_probe() -> None:
 def snapshot(g: Gateway | None) -> Snapshot:
     """Shorthand for a snapshot with or without a valid gateway. Always valid readings"""
     p = probe(reading(45), reading(65))
-    return Snapshot(taken_at=TEN_AM, gateway=g, probes=(p,))
+    return Snapshot(taken_at=TEN_AM, gateways=() if g is None else (g,), probes=(p,))
 
 
 def test_snapshot_has_objects_attached() -> None:
     g = gateway(reading(110), fan())
     s = snapshot(g)
     assert s.taken_at == TEN_AM
-    assert s.gateway is not None
+    assert len(s.gateways) == 1
     assert len(s.probes) == 1
 
 
 def test_snapshot_can_have_missing_gateway() -> None:
     s = snapshot(None)
-    assert s.gateway is None
-
-
-def test_missing_gateway_is_stale() -> None:
-    """This is the 'fail safe'. no gateway = any data is stale"""
-    s = snapshot(None)
-    assert s.is_stale(TEN_FIFTEEN, timedelta(minutes=20))
-
-
-def test_snapshot_is_not_stale() -> None:
-    g = gateway(reading(110), fan())
-    s = snapshot(g)
-    assert not s.is_stale(TEN_FIFTEEN, timedelta(minutes=30))
-
-
-def test_snapshot_is_stale() -> None:
-    g = gateway(reading(110), fan())
-    s = snapshot(g)
-    assert s.is_stale(TEN_FIFTEEN, timedelta(minutes=10))
-
-
-def test_snapshot_not_stale_at_exact_limit() -> None:
-    """Boundary: exactly max_age old is not yet stale."""
-    s = snapshot(gateway(reading(110.0), fan()))
-    assert not s.is_stale(TEN_FIFTEEN, timedelta(minutes=15))
+    assert s.gateways == ()
 
 
 # ------------------------------------------------------------------ alarms ---

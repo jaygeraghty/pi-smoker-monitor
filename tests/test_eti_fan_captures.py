@@ -33,8 +33,8 @@ def load(name: str, now: datetime) -> Snapshot:
 
 
 def gateway_of(snapshot: Snapshot) -> Gateway:
-    assert snapshot.gateway is not None
-    return snapshot.gateway
+    [gateway] = snapshot.gateways
+    return gateway
 
 
 @pytest.fixture

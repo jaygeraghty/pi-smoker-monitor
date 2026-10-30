@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from smoker_monitor.domain.alarms import NO_DEVICE, Alarm, AlarmKind, AlarmRules, evaluate
+from smoker_monitor.domain.alarms import Alarm, AlarmKind, AlarmRules, evaluate
 from smoker_monitor.domain.models import (
     NO_ALARMS,
     AlarmLimit,
@@ -19,6 +19,7 @@ from smoker_monitor.domain.models import (
     Probe,
     Reading,
     Snapshot,
+    SourceHealth,
 )
 from smoker_monitor.report import (
     describe_alarm,
@@ -93,13 +94,13 @@ def test_idle_report_with_its_alarms_shows_gateway_silent() -> None:
 
 
 def test_no_alarms_means_no_alarm_block() -> None:
-    snapshot = Snapshot(taken_at=NOW, gateway=live_gateway(107.0, None), probes=())
+    snapshot = Snapshot(taken_at=NOW, gateways=(live_gateway(107.0, None),), probes=())
     assert "ALARM" not in format_snapshot(snapshot, NOW, ())
 
 
 def test_connected_fan_shows_set_temp_and_deviation() -> None:
     fan = Fan(set_temp_celsius=107.0, state=1, connected=True, activity=FanActivity.BLOWING)
-    snapshot = Snapshot(taken_at=NOW, gateway=live_gateway(110.0, fan), probes=())
+    snapshot = Snapshot(taken_at=NOW, gateways=(live_gateway(110.0, fan),), probes=())
     report = format_snapshot(snapshot, NOW)
     assert "Fan:   connected, set to 107.0°C, blowing" in report
     assert "+3.0°C from the set temperature" in report
@@ -120,9 +121,9 @@ def test_fan_activity_words(state: int | None, activity: FanActivity, words: str
 
 
 def test_missing_gateway_is_explained() -> None:
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=())
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=())
     report = format_snapshot(snapshot, NOW)
-    assert "No RFX Gateway found" in report
+    assert "No gateway found" in report
 
 
 def test_idle_report_shows_pit_alarms() -> None:
@@ -185,7 +186,8 @@ WHITE_PROBE = Probe(
     last_seen=NOW,
     sensors=(Reading(celsius=96.0, taken_at=NOW),),
 )
-WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
+ETI = SourceHealth(key="eti", name="ETI Cloud", expects_gateway=True)
+WITH_PROBE = Snapshot(taken_at=NOW, gateways=(), probes=(WHITE_PROBE,), sources=(ETI,))
 
 
 @pytest.mark.parametrize(
@@ -202,7 +204,7 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
             Alarm(AlarmKind.GATEWAY_TIMEOUT, "G1", 12.7, 5.0),
             "Gateway silent for 12 min (limit 5 min)",
         ),
-        (Alarm(AlarmKind.GATEWAY_TIMEOUT, NO_DEVICE, None, 5.0), "No RFX Gateway found"),
+        (Alarm(AlarmKind.GATEWAY_TIMEOUT, "eti", None, 5.0), "No gateway found from ETI Cloud"),
         (
             Alarm(AlarmKind.PROBE_TIMEOUT, "P1", 7.0, 5.0),
             "RFX MEAT silent for 7 min (limit 5 min)",
@@ -210,7 +212,7 @@ WITH_PROBE = Snapshot(taken_at=NOW, gateway=None, probes=(WHITE_PROBE,))
         (Alarm(AlarmKind.GATEWAY_BATTERY, "G1", 8, 10), "Gateway battery low: 8% (below 10%)"),
         (Alarm(AlarmKind.PROBE_BATTERY, "P1", 5, 10), "RFX MEAT battery low: 5% (below 10%)"),
         (
-            Alarm(AlarmKind.ETI_UNREACHABLE, NO_DEVICE, 6.0, 5.0),
+            Alarm(AlarmKind.SOURCE_UNREACHABLE, "eti", 6.0, 5.0),
             "Can't reach ETI Cloud for 6 min (limit 5 min): readings are out of date",
         ),
     ],
@@ -223,6 +225,11 @@ def test_every_alarm_kind_has_wording() -> None:
     """A new AlarmKind without wording would fail here (and in mypy)."""
     for kind in AlarmKind:
         assert describe_alarm(Alarm(kind, "P1", 1.0, 2.0), WITH_PROBE)
+
+
+def test_unknown_source_falls_back_to_its_key() -> None:
+    alarm = Alarm(AlarmKind.SOURCE_UNREACHABLE, "mystery", 6.0, 5.0)
+    assert describe_alarm(alarm, WITH_PROBE).startswith("Can't reach mystery for")
 
 
 def test_unreadable_limit_is_shown_as_dashes() -> None:
@@ -259,14 +266,14 @@ def alarming_probe(last_seen: datetime) -> Probe:
 
 
 def test_fresh_probe_shows_alarming() -> None:
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(NOW),))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(alarming_probe(NOW),))
     assert "Alarms:  high 20.0°C ALARMING" in format_snapshot(snapshot, NOW)
 
 
 def test_stale_probe_does_not_show_frozen_alarming() -> None:
     """Real case: kit switched off mid-alarm, ETI still says ALARMING hours later."""
     hours_ago = NOW - timedelta(hours=5)
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(hours_ago),))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(alarming_probe(hours_ago),))
     report = format_snapshot(snapshot, NOW)
     assert "Alarms:  high 20.0°C (no recent data)" in report
     assert "ALARMING" not in report
@@ -274,7 +281,7 @@ def test_stale_probe_does_not_show_frozen_alarming() -> None:
 
 def test_staleness_uses_configured_timeout() -> None:
     six_minutes_ago = NOW - timedelta(minutes=6)
-    snapshot = Snapshot(taken_at=NOW, gateway=None, probes=(alarming_probe(six_minutes_ago),))
+    snapshot = Snapshot(taken_at=NOW, gateways=(), probes=(alarming_probe(six_minutes_ago),))
     assert "ALARMING" not in format_snapshot(snapshot, NOW)  # default 5 min timeout
     relaxed = AlarmRules(probe_timeout_minutes=10)
     assert "ALARMING" in format_snapshot(snapshot, NOW, (), relaxed)
