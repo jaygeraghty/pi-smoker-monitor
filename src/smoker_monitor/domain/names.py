@@ -7,9 +7,9 @@ screenshot you share. Instead each device gets a display name:
   ("Pink probe", "Pink/Blue probe"), else its type ("RFX MEAT"), else "Probe".
 - The Gateway: your name for it, else its type ("RFX GATEWAY"), else "Gateway".
 
-If two probes end up with the same name (say, both unnamed with no rings),
-they are numbered "RFX MEAT 1", "RFX MEAT 2" in serial order, so the numbers
-stay put from one poll to the next.
+If two devices of the same type end up with the same name (say, two unnamed
+probes with no rings, or two RFX Gateways), they are numbered "RFX MEAT 1",
+"RFX MEAT 2" in id order, so the numbers stay put from one poll to the next.
 
 Names arrive already tidied by the source (see sources/eti_cloud.py).
 """
@@ -17,14 +17,19 @@ Names arrive already tidied by the source (see sources/eti_cloud.py).
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from smoker_monitor.domain.models import Gateway, Probe, Snapshot
 
 
-def gateway_name(gateway: Gateway) -> str:
-    """What to call the Gateway."""
+def gateway_base_name(gateway: Gateway) -> str:
+    """What to call one Gateway, before any numbering to tell twins apart."""
     return gateway.name or gateway.label or "Gateway"
+
+
+def gateway_names(gateways: Iterable[Gateway]) -> dict[str, str]:
+    """Display names for every Gateway, keyed by id. Duplicates are numbered."""
+    return numbered({gateway.id: gateway_base_name(gateway) for gateway in gateways})
 
 
 def probe_base_name(probe: Probe) -> str:
@@ -39,24 +44,27 @@ def probe_base_name(probe: Probe) -> str:
 
 def probe_names(probes: Iterable[Probe]) -> dict[str, str]:
     """Display names for every probe, keyed by id. Duplicates are numbered."""
-    in_order = sorted(probes, key=lambda probe: probe.id)
-    base = {probe.id: probe_base_name(probe) for probe in in_order}
-    counts = Counter(base.values())
+    return numbered({probe.id: probe_base_name(probe) for probe in probes})
 
-    names: dict[str, str] = {}
+
+def numbered(base: Mapping[str, str]) -> dict[str, str]:
+    """Number any names shared by more than one device ("RFX MEAT 1", ...), in id order.
+
+    `base` maps each device id to its name before numbering. The result keeps
+    the original order of `base`.
+    """
+    counts = Counter(base.values())
     seen: Counter[str] = Counter()
-    for probe in in_order:
-        name = base[probe.id]
+    final: dict[str, str] = {}
+    for device_id in sorted(base):
+        name = base[device_id]
         if counts[name] > 1:
             seen[name] += 1
             name = f"{name} {seen[name]}"
-        names[probe.id] = name
-    return names
+        final[device_id] = name
+    return {device_id: final[device_id] for device_id in base}
 
 
 def device_names(snapshot: Snapshot) -> dict[str, str]:
     """Display names for every device in the Snapshot, keyed by id."""
-    names = probe_names(snapshot.probes)
-    for gateway in snapshot.gateways:
-        names[gateway.id] = gateway_name(gateway)
-    return names
+    return probe_names(snapshot.probes) | gateway_names(snapshot.gateways)
