@@ -2,6 +2,8 @@
 
 - eti_fan_blowing.json: set to 570 °F, fan blowing, pit far below its low alarm.
 - eti_fan_pulsing.json: set to 77 °F, fan pulsing, pit inside its limits.
+- eti_fan_482f.json: five minutes later, set to 482 °F, fan blowing. Here the
+  pit reading arrived as a number (73.4) rather than text ("73").
 
 They confirm, on real data, that the fan's set temperature is °F, what the fan
 state codes mean, and that the alarm rules give the right answer for each.
@@ -25,6 +27,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # Shortly after each capture was taken, so the Gateway counts as fresh.
 BLOWING_AT = datetime(2026, 10, 5, 20, 57, 30, tzinfo=UTC)
 PULSING_AT = datetime(2026, 10, 5, 20, 59, 45, tzinfo=UTC)
+AT_482F = datetime(2026, 10, 5, 21, 2, 30, tzinfo=UTC)
 
 
 def load(name: str, now: datetime) -> Snapshot:
@@ -129,3 +132,21 @@ def test_probe_names_come_from_the_app(blowing: Snapshot) -> None:
         (RingColour.WHITE,),
         (RingColour.PINK,),
     ]
+
+
+# ------------------------------------------------------------ 482 °F capture ---
+
+
+def test_482f_capture() -> None:
+    """Set to 482 °F (250 °C), pit cold: the app moved its alarms to 25 °F either side."""
+    snapshot = load("eti_fan_482f.json", AT_482F)
+    gateway = gateway_of(snapshot)
+    fan = gateway.fan
+    assert fan is not None and fan.activity is FanActivity.BLOWING
+    assert fan.set_temp_celsius == pytest.approx(250.0)
+    assert gateway.get_pit_temp() == pytest.approx(23.0, abs=0.05)  # 73.4 °F, a number
+    alarms = gateway.pit_alarms
+    assert alarms.high is not None and alarms.low is not None
+    assert alarms.high.celsius == pytest.approx(263.9, abs=0.05)  # 507 °F
+    assert alarms.low.celsius == pytest.approx(236.1, abs=0.05)  # 457 °F
+    assert [a.kind for a in evaluate(snapshot, AT_482F, AlarmRules())] == [AlarmKind.PIT_LOW]

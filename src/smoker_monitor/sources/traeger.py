@@ -83,6 +83,11 @@ MAX_NAME_LENGTH = 20
 # How far ahead of our clock a grill's own timestamp may be and still be believed.
 CLOCK_SLACK_SECONDS = 300
 
+# How long a fetch waits for each grill's first message after connecting. A
+# grill that's off still answers (the cloud resends its last status), so this
+# is only a backstop.
+FIRST_MESSAGE_SECONDS = 5.0
+
 # How long the first fetch waits to hear the list of grills.
 STARTUP_SECONDS = 20.0
 
@@ -106,6 +111,7 @@ class TraegerSource:
         self._task: asyncio.Task[None] | None = None
         self._error: str | None = None  # why the listener stopped, if it did
         self._ready = asyncio.Event()  # set once the list of grills is known
+        self._heard_all = asyncio.Event()  # set once every grill has sent a message
 
     async def fetch(self) -> Snapshot:
         """The latest status from every grill. Raises SourceError if not listening."""
@@ -117,6 +123,11 @@ class TraegerSource:
             raise SourceError("Traeger didn't answer in time") from None
         if self._error is not None:
             raise SourceError(self._error)
+        # Just connected: each grill's first message (asked for straight after
+        # connecting) takes a second or two. Wait briefly for it, so a one-off
+        # `smoker snapshot` doesn't show a lit grill as offline.
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._heard_all.wait(), FIRST_MESSAGE_SECONDS)
         assert self._grills is not None  # set before _ready
         return to_snapshot(self._grills, self._latest, self._listening_since)
 
@@ -133,6 +144,7 @@ class TraegerSource:
 
     def _start(self) -> None:
         self._ready = asyncio.Event()
+        self._heard_all = asyncio.Event()
         self._error = None
         self._task = asyncio.create_task(self._listen_forever())
 
@@ -162,6 +174,9 @@ class TraegerSource:
 
     def _remember(self, message: GrillMessage) -> None:
         self._latest[message.thing] = message
+        grills = self._grills or []
+        if all(grill["thingName"] in self._latest for grill in grills):
+            self._heard_all.set()
 
 
 # ------------------------------------------------------------------ mapping ---
