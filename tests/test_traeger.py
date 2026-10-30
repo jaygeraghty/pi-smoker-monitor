@@ -244,6 +244,21 @@ async def test_silent_grill_is_offline_after_a_short_wait(
     await source.close()
 
 
+async def test_silent_grill_only_delays_the_first_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A grill that never answers mustn't slow down every later poll."""
+    monkeypatch.setattr(traeger, "FIRST_MESSAGE_SECONDS", 0.2)
+    source = TraegerSource(SETTINGS, FakeCloud([]))
+    await source.fetch()  # waits once
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    await source.fetch()
+    await source.fetch()
+    assert loop.time() - started < 0.1
+    await source.close()
+
+
 async def test_source_login_failure_is_a_source_error() -> None:
     source = TraegerSource(SETTINGS, FakeCloud([], fail=SourceError("Traeger login failed")))
     with pytest.raises(SourceError, match="login failed"):
