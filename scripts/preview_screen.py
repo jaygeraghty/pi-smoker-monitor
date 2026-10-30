@@ -22,7 +22,12 @@ OUTPUT = Path("screen.png")
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else SAMPLE
     status = json.loads(path.read_text(encoding="utf-8"))
-    draw_screen(status, datetime.now().astimezone()).save(OUTPUT)
+    now = datetime.now().astimezone()
+    if path == SAMPLE:
+        # The sample was written long ago: draw it as if it were fresh, rather
+        # than as "Monitor stopped".
+        now = datetime.fromisoformat(status["updated_at"]).astimezone()
+    draw_screen(status, now).save(OUTPUT)
     print(f"Drew {path} into {OUTPUT}")
 
 
