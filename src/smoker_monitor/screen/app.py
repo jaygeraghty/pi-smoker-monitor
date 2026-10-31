@@ -3,7 +3,7 @@
 It's a separate program from the monitor (`smoker run`), on purpose: if the
 screen code ever breaks, the alarms keep working.
 
-Every second it checks state/status.json, and redraws when the file has
+Every second it checks the status file, and redraws when the file has
 changed or the clock's minute has ticked over. A tap anywhere on the screen
 while an alarm rings asks the monitor to silence it (the same as running
 `smoker silence`).
@@ -56,12 +56,12 @@ class ScreenApp:
 
     def __init__(
         self,
-        state_dir: Path,
+        run_dir: Path,
         display: Display,
         clock: Callable[[], datetime] = local_now,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        self.state_dir = state_dir
+        self.run_dir = run_dir  # where the monitor writes status.json and reads silence requests
         self.display = display
         self.clock = clock
         self.sleep = sleep
@@ -84,7 +84,7 @@ class ScreenApp:
 
     def refresh(self) -> bool:
         """Redraw if anything visible has changed. Returns True if it redrew."""
-        path = self.state_dir / STATUS_FILE
+        path = self.run_dir / STATUS_FILE
         now = self.clock()
         try:
             changed = path.stat().st_mtime_ns
@@ -106,5 +106,5 @@ class ScreenApp:
     def tap(self) -> None:
         """A finger touched the screen: silence any ringing alarm."""
         if self.status and any(a.get("status") == "ringing" for a in self.status.get("alarms", [])):
-            request_silence(self.state_dir)
+            request_silence(self.run_dir)
             log.info("Tapped: silence requested")

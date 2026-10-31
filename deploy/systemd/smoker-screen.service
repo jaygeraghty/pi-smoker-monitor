@@ -1,0 +1,21 @@
+# The touchscreen display. Installed by deploy/install-services.sh.
+[Unit]
+Description=Smoker screen (shows the status on the Pi's touchscreen)
+After=smoker-monitor.service
+
+[Service]
+Type=simple
+# User= gives it the video and input groups it needs for the screen and touch.
+User=__USER__
+WorkingDirectory=__DIR__
+RuntimeDirectory=smoker
+RuntimeDirectoryPreserve=yes
+ExecStart=__DIR__/.venv/bin/smoker screen --run-dir /run/smoker
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

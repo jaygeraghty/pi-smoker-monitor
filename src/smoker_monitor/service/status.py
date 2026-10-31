@@ -272,6 +272,8 @@ def grill_status(
         "id": grill.id,
         "source": source,
         "kind": "grill",
+        "mode": grill.mode.value,  # e.g. "cooking", "offline"
+        "is_on": grill.mode.is_on,  # False: a screen says what it's doing, not "no data"
         "name": name,
         "fresh": fresh,
         "last_seen": grill.last_seen.isoformat(),

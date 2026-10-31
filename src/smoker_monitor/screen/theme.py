@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import cache
 from pathlib import Path
 
@@ -45,7 +46,10 @@ RING_COLOURS: dict[str, Colour] = {
     "yellow": (240, 210, 60),
 }
 
-# DejaVu comes with Raspberry Pi OS (and most Linux).
+log = logging.getLogger(__name__)
+
+# DejaVu comes with most Linux, but not always Raspberry Pi OS Lite:
+# `sudo apt install fonts-dejavu-core` adds it.
 FONT_FOLDER = Path("/usr/share/fonts/truetype/dejavu")
 
 Font = ImageFont.FreeTypeFont | ImageFont.ImageFont
@@ -58,4 +62,15 @@ def font(size: int, bold: bool = False) -> Font:
     try:
         return ImageFont.truetype(str(FONT_FOLDER / name), size)
     except OSError:
+        warn_about_font()
         return ImageFont.load_default(size)
+
+
+@cache
+def warn_about_font() -> None:
+    """Say once that the screen is using Pillow's plain font (it still works)."""
+    log.warning(
+        "DejaVu font not found in %s: using a plainer one. "
+        "Install it with: sudo apt install fonts-dejavu-core",
+        FONT_FOLDER,
+    )

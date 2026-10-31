@@ -213,6 +213,21 @@ def test_silence_leaves_a_request_for_the_monitor(
     assert "Silence requested" in capsys.readouterr().out
 
 
+def test_silence_goes_to_the_run_dir_when_given(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    assert main(["silence", "--state-dir", str(tmp_path / "state"), "--run-dir", str(run_dir)]) == 0
+    assert (run_dir / "silence").exists()
+    assert not (tmp_path / "state" / "silence").exists()
+
+
+def test_run_passes_the_run_dir_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    use_source(monkeypatch, FakeSource)
+    monkeypatch.setattr(cli, "Monitor", InterruptedMonitor)
+    run_dir = tmp_path / "run"
+    main(["run", "--config", str(write_config(tmp_path)), "--run-dir", str(run_dir)])
+    assert InterruptedMonitor.built["run_dir"] == run_dir
+
+
 def test_run_stops_cleanly_on_ctrl_c(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

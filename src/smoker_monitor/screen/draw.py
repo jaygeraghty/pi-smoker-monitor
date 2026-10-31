@@ -39,6 +39,9 @@ from smoker_monitor.screen.theme import (
 # If the status file is older than this, the monitor itself has stopped.
 STALE_STATUS_SECONDS = 120
 
+# Width of the dot beside each source's name in the top bar.
+DOT = 14
+
 
 def draw_screen(status: dict[str, Any], now: datetime) -> Image.Image:
     """The whole screen for this status. `now` is the local time, for the clock.
@@ -108,10 +111,11 @@ def draw_top_bar(draw: ImageDraw.ImageDraw, status: dict[str, Any], now: datetim
     # Right to left, so the last source ends up nearest the edge.
     x = WIDTH - 16
     for source in reversed(status.get("sources", [])):
-        label = f"{source['name']} ●"
-        colour = GOOD if source.get("ok") else ALARM
-        draw.text((x, 16), label, font=font(18), fill=colour, anchor="ra")
-        x -= int(draw.textlength(label, font=font(18))) + 20
+        name, colour = source["name"], GOOD if source.get("ok") else ALARM
+        # The dot is drawn, not typed: a missing font would turn "●" into a box.
+        draw.ellipse((x - DOT, 22, x, 22 + DOT), fill=colour)
+        draw.text((x - DOT - 8, 16), name, font=font(18), fill=colour, anchor="ra")
+        x -= int(draw.textlength(name, font=font(18))) + DOT + 28
 
     note = silenced_note(status)
     if note:
@@ -213,6 +217,12 @@ def draw_pit(
     name = fit(draw, pit["name"], font(18, bold=True), right - left - source_width - 44)
     draw.text((left + 16, top + 12), name, font=font(18, bold=True), fill=name_colour)
     draw.text((right - 16, top + 14), pit["source"], font=font(14), fill=DIM, anchor="ra")
+
+    if pit.get("is_on") is False:
+        # A grill that is off isn't "missing": say what it is doing.
+        mode = str(pit.get("mode") or "off").capitalize()
+        draw.text((left + 16, top + 56), mode, font=font(40, bold=True), fill=DIM)
+        return
 
     if not fresh:
         # Old numbers would look current, so don't show them at all.
@@ -317,7 +327,9 @@ def draw_probe(
     if target is None:
         draw.text((right - 14, bottom - 26), "no target", font=font(15), fill=DIM, anchor="rb")
         return
-    draw.text((right - 14, bottom - 26), f"→ {target:.0f}°", font=font(17), fill=DIM, anchor="rb")
+    draw.text(
+        (right - 14, bottom - 26), f"target {target:.0f}°", font=font(17), fill=DIM, anchor="rb"
+    )
     draw_progress(draw, (left + 14, bottom - 20, right - 14, bottom - 10), temp, target)
 
 

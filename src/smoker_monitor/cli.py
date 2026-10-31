@@ -35,6 +35,7 @@ from smoker_monitor.notifiers.console import ConsoleNotifier
 from smoker_monitor.report import format_snapshot
 from smoker_monitor.service.combine import combine
 from smoker_monitor.service.monitor import Monitor, request_silence
+from smoker_monitor.service.watchdog import SystemdWatchdog
 from smoker_monitor.sources.base import Source, SourceError
 from smoker_monitor.sources.factory import build_sources
 
@@ -58,12 +59,15 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="Run the monitor until stopped with Ctrl+C")
     add_config_option(run)
     add_state_dir_option(run)
+    add_run_dir_option(run)
 
     silence = commands.add_parser("silence", help="Silence a running monitor's alarms")
     add_state_dir_option(silence)
+    add_run_dir_option(silence)
 
     screen = commands.add_parser("screen", help="Show the monitor's status on the Pi's screen")
     add_state_dir_option(screen)
+    add_run_dir_option(screen)
     screen.add_argument(
         "--framebuffer",
         type=Path,
@@ -81,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     web = commands.add_parser("web", help="Serve the settings page for your phone")
     add_config_option(web)
     add_state_dir_option(web)
+    add_run_dir_option(web)
     web.add_argument(
         "--host",
         default="0.0.0.0",  # on purpose: other devices on your network must reach it
@@ -111,7 +116,17 @@ def add_state_dir_option(command: argparse.ArgumentParser) -> None:
         "--state-dir",
         type=Path,
         default=DEFAULT_STATE_DIR,
-        help="Folder for the status file and silence requests (default: state)",
+        help="Folder for settings, which must survive a reboot (default: state)",
+    )
+
+
+def add_run_dir_option(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help="Folder for the status file and requests such as silence. A folder in memory "
+        "(e.g. /run/smoker) spares the SD card (default: the same as --state-dir)",
     )
 
 
@@ -168,7 +183,7 @@ async def fetch_once(source: Source) -> Snapshot | SourceError:
         await source.close()
 
 
-def handle_run(config_path: Path, state_dir: Path) -> int:
+def handle_run(config_path: Path, state_dir: Path, run_dir: Path | None) -> int:
     """Run the monitor until Ctrl+C. Returns an exit code."""
     try:
         config = load_config(config_path)
@@ -183,6 +198,8 @@ def handle_run(config_path: Path, state_dir: Path) -> int:
         rules=config.alarms,
         notifier=ConsoleNotifier(),
         state_dir=state_dir,
+        run_dir=run_dir,
+        watchdog=SystemdWatchdog(),
     )
     watching = ", ".join(f"{s.name} every {s.poll_seconds} s" for s in sources)
     print(f"Monitoring {watching}. Ctrl+C to stop.")
@@ -193,14 +210,14 @@ def handle_run(config_path: Path, state_dir: Path) -> int:
     return EXIT_OK
 
 
-def handle_silence(state_dir: Path) -> int:
+def handle_silence(run_dir: Path) -> int:
     """Ask a running monitor to silence its alarms."""
-    request_silence(state_dir)
+    request_silence(run_dir)
     print("Silence requested: a running monitor will go quiet within a second or two.")
     return EXIT_OK
 
 
-def handle_screen(state_dir: Path, framebuffer: Path, rotate: int) -> int:
+def handle_screen(run_dir: Path, framebuffer: Path, rotate: int) -> int:
     """Keep the Pi's screen showing the status, until Ctrl+C. Returns an exit code."""
     # Imported here so the other commands don't need the screen's libraries.
     from smoker_monitor.screen.app import ScreenApp
@@ -212,16 +229,21 @@ def handle_screen(state_dir: Path, framebuffer: Path, rotate: int) -> int:
     except OSError as e:
         print(f"Can't use the screen at {framebuffer}: {e}", file=sys.stderr)
         return EXIT_FAILED
-    print(f"Showing {state_dir / 'status.json'} on {framebuffer}. Ctrl+C to stop.")
+    print(f"Showing {run_dir / 'status.json'} on {framebuffer}. Ctrl+C to stop.")
     try:
-        asyncio.run(ScreenApp(state_dir, display).run())
+        asyncio.run(ScreenApp(run_dir, display).run())
     except KeyboardInterrupt:
         print("Stopped.")
     return EXIT_OK
 
 
 def handle_web(
-    config_path: Path, state_dir: Path, host: str, port: int, allow_hosts: Sequence[str]
+    config_path: Path,
+    state_dir: Path,
+    run_dir: Path | None,
+    host: str,
+    port: int,
+    allow_hosts: Sequence[str],
 ) -> int:
     """Serve the settings page until Ctrl+C. Returns an exit code."""
     # Imported here so the other commands don't load the web server.
@@ -241,7 +263,7 @@ def handle_web(
         has_traeger=config.traeger_mqtt is not None,
     )
     try:
-        server = make_server(WebApp(state_dir, info, allow_hosts), host, port)
+        server = make_server(WebApp(state_dir, info, allow_hosts, run_dir=run_dir), host, port)
     except OSError as e:
         print(f"Can't serve on {host}:{port}: {e.strerror or e}", file=sys.stderr)
         return EXIT_FAILED
@@ -264,12 +286,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "snapshot":
         return handle_snapshot(args.config)
     if args.command == "run":
-        return handle_run(args.config, args.state_dir)
+        return handle_run(args.config, args.state_dir, args.run_dir)
     if args.command == "silence":
-        return handle_silence(args.state_dir)
+        return handle_silence(args.run_dir or args.state_dir)
     if args.command == "screen":
-        return handle_screen(args.state_dir, args.framebuffer, args.rotate)
+        return handle_screen(args.run_dir or args.state_dir, args.framebuffer, args.rotate)
     if args.command == "web":
-        return handle_web(args.config, args.state_dir, args.host, args.port, args.allow_host)
+        return handle_web(
+            args.config, args.state_dir, args.run_dir, args.host, args.port, args.allow_host
+        )
     parser.print_help()
     return EXIT_OK

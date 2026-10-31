@@ -1,0 +1,27 @@
+# The monitor: polls ETI Cloud / Traeger, checks alarms, writes the status file.
+# Installed by deploy/install-services.sh, which fills in __USER__ and __DIR__.
+[Unit]
+Description=Smoker monitor (polls the cooking gear and checks the alarms)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=notify + WatchdogSec: the monitor says "alive" every few seconds; if it is
+# stuck (not crashed) for 2 minutes, systemd restarts it.
+Type=notify
+NotifyAccess=main
+WatchdogSec=120
+User=__USER__
+WorkingDirectory=__DIR__
+# /run/smoker is in memory: the status file is rewritten every poll, so keep it off the SD card.
+RuntimeDirectory=smoker
+RuntimeDirectoryPreserve=yes
+ExecStart=__DIR__/.venv/bin/smoker run --config __DIR__/config.toml --state-dir __DIR__/state --run-dir /run/smoker
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

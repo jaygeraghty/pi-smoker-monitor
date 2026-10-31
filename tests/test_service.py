@@ -566,3 +566,55 @@ async def test_probe_never_part_of_the_cook_isnt_kept(tmp_path: Path) -> None:
     await poll_times(monitor, clock, 2)
     assert monitor.snapshot is not None
     assert monitor.snapshot.probes == ()
+
+
+# ------------------------------------------------------ run folder, watchdog ---
+
+
+class RecordingWatchdog:
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def ready(self) -> None:
+        self.events.append("ready")
+
+    def ping(self) -> None:
+        self.events.append("ping")
+
+
+async def test_status_and_requests_use_the_run_dir_but_settings_stay_in_state(
+    tmp_path: Path,
+) -> None:
+    state_dir, run_dir = tmp_path / "state", tmp_path / "run"
+    run_dir.mkdir()
+    monitor = Monitor(
+        sources=[ScriptedSource(snapshot(START, pit=182.0), snapshot(START + POLL, pit=182.0))],
+        rules=AlarmRules(),
+        notifier=RecordingNotifier(),
+        state_dir=state_dir,
+        run_dir=run_dir,
+        clock=(clock := Clock()),
+        sleep=no_sleep,
+    )
+    await poll_times(monitor, clock, 2)
+    assert (run_dir / STATUS_FILE).exists()
+    assert not (state_dir / STATUS_FILE).exists()
+
+    request_silence(run_dir)
+    await monitor.wait_for_next_poll(30)
+    assert not (run_dir / SILENCE_FILE).exists()  # the request was used up
+
+
+async def test_the_monitor_tells_the_watchdog_it_is_alive(tmp_path: Path) -> None:
+    async def stop(seconds: float) -> None:
+        raise StopLoop
+
+    watchdog = RecordingWatchdog()
+    monitor, _, _ = make_monitor(tmp_path, snapshot(START))
+    monitor.watchdog = watchdog
+    monitor.sleep = stop
+    with pytest.raises(StopLoop):
+        await monitor.run_forever()
+
+    assert watchdog.events[0] == "ready"
+    assert watchdog.events.count("ping") >= 2  # before and after the poll

@@ -78,10 +78,10 @@ uv run smoker screen
 
 Options:
 - `--rotate 270` if the picture comes out upside down (default 90).
-- `--state-dir PATH` if the monitor uses a different state folder.
+- `--run-dir PATH` if the monitor keeps its status file somewhere else (default: the state folder; the boot services use `/run/smoker`).
 - `--framebuffer /dev/fb1` if the screen isn't the first framebuffer.
 
-Starting both automatically when the Pi boots is the next job.
+Starting everything automatically when the Pi boots: see [deploy.md](deploy.md).
 
 ## Seeing it without the screen
 

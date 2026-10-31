@@ -34,6 +34,9 @@ The settings page (`smoker web`) is another separate program: a phone-friendly
 page on your home network for changing alarms, probe targets and names without
 editing `config.toml`. See [docs/web.md](docs/web.md).
 
+To start everything when the Pi boots, and restart it if it fails or gets stuck, see
+[docs/deploy.md](docs/deploy.md).
+
 The core logic (models and alarm rules) knows nothing about ETI Cloud, GPIO or
 speakers. Those live behind small interfaces, so everything can be developed
 and tested on a normal PC. See [docs/architecture.md](docs/architecture.md).

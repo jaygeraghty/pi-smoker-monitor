@@ -23,7 +23,7 @@ Repo layout, tooling (uv, ruff, mypy, pytest, pre-commit), CI, docs.
 - [ ] Notifiers: sound, Pushover
 - [ ] Hardware: acknowledge button + LED (with PC fake)
 - [x] `smoker run` and `smoker silence`, status file for screens
-- [ ] systemd unit in `deploy/systemd/`
+- [x] systemd units in `deploy/systemd/` (see [deploy.md](deploy.md))
 - [ ] Live test on a real cook
 
 ## Milestone 4 — Touchscreen UI
@@ -35,4 +35,4 @@ Repo layout, tooling (uv, ruff, mypy, pytest, pre-commit), CI, docs.
 
 ## Web config page ✅
 Built: see [web.md](web.md). The decisions behind it are in [web-config.md](web-config.md).
-Still to do: systemd units for monitor, screen and web; status file in RAM.
+Boot services and the RAM status file: see [deploy.md](deploy.md).

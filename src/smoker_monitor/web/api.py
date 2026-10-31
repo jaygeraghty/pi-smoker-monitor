@@ -113,8 +113,10 @@ class WebApp:
         info: WebInfo,
         extra_hosts: Iterable[str] = (),
         clock: Callable[[], datetime] = utc_now,
+        run_dir: Path | None = None,
     ) -> None:
-        self.state_dir = state_dir
+        self.state_dir = state_dir  # settings.json
+        self.run_dir = run_dir or state_dir  # status.json and the monitor's request files
         self.info = info
         self.extra_hosts = tuple(extra_hosts)
         self.clock = clock
@@ -182,7 +184,7 @@ class WebApp:
         if method == "PUT" and path == "/api/settings":
             return self._put_settings(body)
         if method == "POST" and path == "/api/silence":
-            request_silence(self.state_dir)
+            request_silence(self.run_dir)
             return json_response(200, {"ok": True})
         if method == "POST" and path == "/api/end-cook":
             return self._end_cook()
@@ -263,7 +265,7 @@ class WebApp:
     def _status(self) -> dict[str, Any]:
         """The monitor's status file with its age, or a note that there isn't one."""
         try:
-            data = json.loads((self.state_dir / STATUS_FILE).read_text(encoding="utf-8"))
+            data = json.loads((self.run_dir / STATUS_FILE).read_text(encoding="utf-8"))
             updated = datetime.fromisoformat(data["updated_at"])
         except (OSError, ValueError, KeyError, TypeError):
             return {"running": False, "age_seconds": None, "status": None}
@@ -276,7 +278,7 @@ class WebApp:
             store.end_cook(self.settings_path, self.info.base_rules)
         except SettingsError:
             return self._settings_response(500)
-        request_end_cook(self.state_dir)
+        request_end_cook(self.run_dir)
         return json_response(200, {"ok": True, "cleared": len(before.custom_limits())})
 
 
