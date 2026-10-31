@@ -19,11 +19,13 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9",
     "aiomqtt>=2.0",  # Traeger: listening to the grill's status (read-only)
+    "pillow>=11.0",  # the screen: drawing it
     "thermoworks-cloud>=0.1.16",
 ]
 
 [project.optional-dependencies]
 pi = [
+    "evdev>=1.6",  # the screen: tap to silence (Linux only)
     "gpiozero>=2.0",
 ]
 
@@ -69,7 +71,7 @@ strict = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["thermoworks_cloud.*", "gpiozero.*"]
+module = ["thermoworks_cloud.*", "gpiozero.*", "evdev", "evdev.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

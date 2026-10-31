@@ -37,7 +37,7 @@ package; nothing imports `cli`.
 | `notifiers` | Sound, Pushover, console behind one protocol | 3 |
 | `hardware` | Acknowledge button + LED (gpiozero), with a fake | 3 |
 | `service` | Poll → evaluate → notify loop; writes `state/status.json` for screens | 3 |
-| `ui` | Touchscreen display | 4 |
+| `screen` | Touchscreen display: draws `state/status.json`, tap to silence. See [screen.md](screen.md) | 4 |
 
 ## Data from ETI Cloud (observed, October 2026)
 

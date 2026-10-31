@@ -4,6 +4,7 @@ Commands:
     smoker snapshot   Print current readings and any active alarms
     smoker run        Run the monitor: poll, check alarms, ring until silenced
     smoker silence    Silence whatever a running monitor has ringing
+    smoker screen     Show the running monitor's status on the Pi's screen
 
 Exit codes for `smoker snapshot`:
     0  all fine
@@ -58,6 +59,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     silence = commands.add_parser("silence", help="Silence a running monitor's alarms")
     add_state_dir_option(silence)
+
+    screen = commands.add_parser("screen", help="Show the monitor's status on the Pi's screen")
+    add_state_dir_option(screen)
+    screen.add_argument(
+        "--framebuffer",
+        type=Path,
+        default=Path("/dev/fb0"),
+        help="The screen's framebuffer device (default: /dev/fb0)",
+    )
+    screen.add_argument(
+        "--rotate",
+        type=int,
+        choices=(90, 270),
+        default=90,
+        help="Turn the picture this many degrees on a portrait screen (default: 90)",
+    )
     return parser
 
 
@@ -164,6 +181,26 @@ def handle_silence(state_dir: Path) -> int:
     return EXIT_OK
 
 
+def handle_screen(state_dir: Path, framebuffer: Path, rotate: int) -> int:
+    """Keep the Pi's screen showing the status, until Ctrl+C. Returns an exit code."""
+    # Imported here so the other commands don't need the screen's libraries.
+    from smoker_monitor.screen.app import ScreenApp
+    from smoker_monitor.screen.framebuffer import Framebuffer
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    try:
+        display = Framebuffer(framebuffer, rotate)
+    except OSError as e:
+        print(f"Can't use the screen at {framebuffer}: {e}", file=sys.stderr)
+        return EXIT_FAILED
+    print(f"Showing {state_dir / 'status.json'} on {framebuffer}. Ctrl+C to stop.")
+    try:
+        asyncio.run(ScreenApp(state_dir, display).run())
+    except KeyboardInterrupt:
+        print("Stopped.")
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -173,5 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return handle_run(args.config, args.state_dir)
     if args.command == "silence":
         return handle_silence(args.state_dir)
+    if args.command == "screen":
+        return handle_screen(args.state_dir, args.framebuffer, args.rotate)
     parser.print_help()
     return EXIT_OK

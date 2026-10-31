@@ -46,3 +46,9 @@ of grills and every status message heard while listening, redacted:
   2026-09-05 18:55 UTC (`status.time`), when asked on 2026-10-30. Offline
   (system_status 99), °C (units 0), grill 16 °C, set 75 °C, pellets 30%, no
   probe plugged in.
+
+## Status file
+
+- `status_sample.json`: a made-up but realistic `state/status.json` with both
+  brands: an RFX Gateway with Billows, a Traeger grill, three probes cooking
+  and one left in the drawer (not fresh). Used to preview and test the screen.
