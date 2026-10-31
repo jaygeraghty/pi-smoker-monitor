@@ -120,6 +120,29 @@ def step(state: AlarmState, alarms: Iterable[Alarm], now: datetime) -> AlarmStat
     return AlarmState(tracked)
 
 
+def reconcile(state: AlarmState, alarms: Iterable[Alarm], now: datetime) -> AlarmState:
+    """Return the state after the *rules* changed, with no new poll.
+
+    Used when you change a setting or end a cook: what you've just switched off
+    stops at once, instead of ringing until the next poll. Nothing is counted,
+    so this can't bring a glitch closer to ringing:
+    - still wrong: kept exactly as it was (its latest values updated),
+    - no longer wrong: forgotten now,
+    - newly wrong (say you lowered a target below the current reading): starts
+      pending, like any new alarm.
+    """
+    present = {key_of(alarm): alarm for alarm in alarms}
+    tracked = {
+        key: replace(old, alarm=present[key])
+        for key, old in state.tracked.items()
+        if key in present
+    }
+    for key, alarm in present.items():
+        if key not in tracked:
+            tracked[key] = TrackedAlarm(alarm=alarm, first_seen=now)
+    return AlarmState(tracked)
+
+
 def silence_all(state: AlarmState) -> AlarmState:
     """Silence everything that is ringing (the silence button).
 

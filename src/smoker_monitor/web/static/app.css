@@ -1,0 +1,278 @@
+/* Smoker settings page. Built to: Apple's iOS design guidance (44 pt targets,
+ * grouped lists, switches, Dynamic Type, light/dark, safe areas) and WCAG 2.2 AA
+ * (contrast, no colour-only meaning, visible focus, reflow, reduced motion). */
+
+/* ---------------------------------------------------------------- tokens --- */
+:root {
+  --bg: #f2f2f7;            /* iOS grouped background */
+  --card: #ffffff;
+  --text: #1c1c1e;
+  --text-2: #545458;        /* secondary text: 7.5:1 on white */
+  --separator: #c6c6c8;
+  --accent: #0a6cd6;        /* links, primary button: 4.9:1 on white */
+  --on-accent: #ffffff;     /* text on the accent colour: 5.1:1 */
+  --on-danger: #ffffff;     /* 5.8:1 on the danger colour */
+  --on: #1f8a3c;            /* switch on: 4.6:1 on white (non-text needs 3:1) */
+  --off-track: #8e8e93;     /* control outlines: 3.3:1 on white */
+  --warn-bg: #fff4e0;
+  --warn-text: #7a4a00;     /* 7.6:1 on its background */
+  --alarm-bg: #fde8e7;
+  --alarm-text: #8c1a14;    /* 7.3:1 on its background */
+  --danger: #c4231b;        /* 5.6:1 on white */
+  --error-text: #b3261e;
+  --focus: #0a6cd6;
+  --radius: 12px;
+  --tap: 44px;              /* Apple HIG minimum tap target */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --text: #f2f2f7;
+    --text-2: #aeaeb2;      /* 8.4:1 on the card */
+    --separator: #3a3a3c;
+    --accent: #5aa9ff;
+    --on-accent: #001a33;   /* 7.2:1 on the dark accent */
+    --on-danger: #2a0200;   /* 6.6:1 on the dark danger colour */
+    --on: #32c759;
+    --off-track: #8e8e93;
+    --warn-bg: #3a2a0a;
+    --warn-text: #ffd28a;
+    --alarm-bg: #4a1512;
+    --alarm-text: #ffb4ab;
+    --danger: #ff6961;
+    --error-text: #ff8a80;
+    --focus: #5aa9ff;
+  }
+}
+
+/* ------------------------------------------------------------------ base --- */
+* { box-sizing: border-box; }
+html {
+  /* Follows the iPhone's Text Size setting (Dynamic Type) in Safari. */
+  font: -apple-system-body;
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.35;
+  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right))
+           calc(110px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.top, .alerts, main { max-width: 640px; margin: 0 auto; }
+h1 { font-size: 2.1rem; font-weight: 700; margin: 20px 0 4px; letter-spacing: -0.02em; }
+h2.section {
+  font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-2); margin: 28px 16px 8px;
+}
+p { margin: 0; }
+[hidden] { display: none !important; }
+main:focus { outline: none; }  /* only a place to land after changing page */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 16px; top: 8px; background: var(--card); padding: 10px 14px; z-index: 50; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
+                   clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+.loading { color: var(--text-2); margin: 16px; }
+
+/* --------------------------------------------------- connection and tabs --- */
+.connection { color: var(--text-2); font-size: 0.9rem; min-height: 1.3em; }
+.connection.bad { color: var(--warn-text); background: var(--warn-bg); font-weight: 600;
+                  border-radius: 8px; padding: 6px 10px; display: inline-block; }
+.tabs { display: flex; flex-wrap: wrap; gap: 3px; margin: 12px 0 4px; padding: 3px;
+        background: color-mix(in srgb, var(--text) 8%, var(--bg)); border-radius: 10px; }
+.tabs a {
+  flex: 1 1 6em; min-width: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+  min-height: var(--tap); padding: 4px 6px; border-radius: 8px;
+  color: var(--text); text-decoration: none; font-weight: 600;
+}
+.tabs a[aria-current="page"] {
+  background: var(--card); box-shadow: inset 0 -3px 0 var(--accent); }
+.tabs .dot { color: var(--warn-text); margin-left: 4px; }
+
+/* ---------------------------------------------------------------- banners --- */
+.alerts { display: grid; gap: 8px; margin-top: 8px; }
+.banner {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--warn-bg); color: var(--warn-text);
+  border-radius: var(--radius); padding: 12px 14px; font-weight: 600;
+}
+.banner.alarm { background: var(--alarm-bg); color: var(--alarm-text); }
+.banner .icon { flex: none; font-size: 1.15em; line-height: 1.2; }
+.banner .grow { flex: 1; min-width: 0; }
+.banner ul { margin: 4px 0 0; padding-left: 18px; font-weight: 500; }
+.banner .btn { margin-top: 10px; }
+
+/* ------------------------------------------------------ grouped list rows --- */
+.group { background: var(--card); border-radius: var(--radius); overflow: hidden; }
+.row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  min-height: var(--tap); padding: 11px 16px; position: relative;
+}
+.row + .row::before, .sub::before {
+  content: ""; position: absolute; top: 0; left: 16px; right: 0;
+  border-top: 1px solid var(--separator);
+}
+.row .text { flex: 1 1 12em; min-width: 0; }
+.row .name { display: block; font-weight: 500; }
+.hint { color: var(--text-2); font-size: 0.88rem; margin-top: 2px; }
+.footer { color: var(--text-2); font-size: 0.85rem; margin: 8px 16px 0; }
+.empty { color: var(--text-2); padding: 16px; }
+
+.state-off {
+  display: inline-block; margin-top: 4px; font-size: 0.82rem; font-weight: 600;
+  color: var(--warn-text); background: var(--warn-bg); border-radius: 6px; padding: 1px 7px;
+}
+
+/* --------------------------------------------------------------- switches --- */
+input[role="switch"] {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none;
+  width: 51px; height: 31px; border-radius: 31px; position: relative; cursor: pointer;
+  background: transparent; border: 2px solid var(--off-track);
+  transition: background .2s, border-color .2s;
+}
+input[role="switch"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 23px; height: 23px; border-radius: 50%; background: var(--off-track);
+  transition: transform .2s, background .2s;
+}
+input[role="switch"]:checked { background: var(--on); border-color: var(--on); }
+input[role="switch"]:checked::after { transform: translateX(20px); background: #fff; }
+.switch-hit { display: flex; align-items: center; justify-content: center;
+              min-width: var(--tap); min-height: var(--tap); }
+
+/* --------------------------------------------------------------- steppers --- */
+.sub { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+       padding: 8px 16px 12px 16px; }
+.sub .what { flex: 1 1 8em; color: var(--text-2); }
+.stepper { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; }
+.stepper button {
+  width: var(--tap); height: var(--tap); border-radius: 10px; border: 0;
+  background: var(--bg); color: var(--text); font-size: 1.4rem; line-height: 1; cursor: pointer;
+}
+.stepper button:disabled { opacity: .4; cursor: default; }
+.stepper input {
+  width: 3.6em; min-width: 0; height: var(--tap); text-align: center; font: inherit; font-weight: 600;
+  color: var(--text); background: var(--card);
+  border: 1.5px solid var(--off-track); border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.stepper input[aria-invalid="true"] { border-color: var(--error-text); border-width: 2px; }
+.unit { color: var(--text-2); min-width: 2.2em; margin-left: 4px; }
+.error { color: var(--error-text); font-size: 0.88rem; font-weight: 600;
+         padding: 0 16px 12px; display: flex; gap: 6px; }
+
+/* -------------------------------------------------------------- text field --- */
+.field { width: 100%; }
+.field label { display: block; font-weight: 500; margin-bottom: 4px; }
+.field input[type="text"] {
+  width: 100%; min-height: var(--tap); padding: 8px 12px; font: inherit;
+  color: var(--text); background: var(--bg); border: 1.5px solid transparent; border-radius: 10px;
+}
+.field input[type="text"]:focus-visible { border-color: var(--focus); outline-offset: 0; }
+
+/* ------------------------------------------------------ segmented control --- */
+.segmented { display: flex; flex-wrap: wrap; background: var(--bg); border-radius: 10px;
+             padding: 3px; gap: 3px; border: 0; margin: 0; min-width: 0; }
+.segmented label { position: relative; flex: 1 1 auto; }
+.segmented input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.segmented span {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  min-width: 64px; min-height: 38px; padding: 0 10px; border-radius: 8px; font-weight: 600;
+}
+.segmented input:checked + span { background: var(--accent); color: var(--on-accent); }
+.segmented input:focus-visible + span { outline: 3px solid var(--focus); }
+.choice { width: 100%; border: 0; padding: 0; margin: 0; min-width: 0; }
+.choice legend { font-weight: 500; padding: 0; margin-bottom: 6px; }
+
+/* ------------------------------------------------------------------ chips --- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  min-height: var(--tap); padding: 0 14px; border-radius: 22px; border: 1.5px solid var(--off-track);
+  background: transparent; color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+/* ---------------------------------------------------------------- buttons --- */
+.btn {
+  min-height: 50px; padding: 0 20px; border-radius: 12px; border: 0; font: inherit;
+  font-weight: 600; cursor: pointer;
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-secondary { background: var(--bg); color: var(--accent); }
+.card .btn-secondary, .banner .btn-secondary { background: color-mix(in srgb, var(--text) 8%, var(--card)); }
+.btn-danger { background: var(--danger); color: var(--on-danger); }
+.btn-block { width: 100%; }
+.btn:disabled { opacity: .45; cursor: default; }
+.link-button {
+  background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer;
+  min-height: var(--tap); padding: 0 16px; margin-top: 16px;
+}
+.actions-row { margin: 20px 0 0; display: grid; gap: 10px; }
+
+/* ---------------------------------------------------------- live readings --- */
+.reading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 12px 16px; position: relative; }
+.reading + .reading::before { content: ""; position: absolute; top: 0; left: 16px; right: 0;
+                              border-top: 1px solid var(--separator); }
+.reading .who { flex: 1 1 10em; min-width: 0; }
+.reading .who .name { font-weight: 600; }
+.reading .temp { font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.reading .temp.stale { color: var(--text-2); font-weight: 600; font-size: 1rem; }
+.tag { display: inline-block; font-size: 0.82rem; font-weight: 600; border-radius: 6px;
+       padding: 1px 7px; color: var(--text-2); background: color-mix(in srgb, var(--text) 8%, var(--card)); }
+.tag.warn { color: var(--warn-text); background: var(--warn-bg); }
+.tag.alarm { color: var(--alarm-text); background: var(--alarm-bg); }
+
+.device-head { padding: 14px 16px 6px; display: flex; flex-wrap: wrap; gap: 4px 12px;
+               justify-content: space-between; align-items: baseline; }
+.device-head h3 { margin: 0; font-size: 1.15rem; }
+.device-head .now { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* -------------------------------------------------- save bar (thumb zone) --- */
+.savebar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-top: 1px solid var(--separator);
+  padding: 12px max(16px, env(safe-area-inset-right))
+           calc(12px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.savebar .inner { max-width: 640px; margin: 0 auto; display: flex; gap: 12px;
+                  align-items: center; flex-wrap: wrap; }
+.savebar .changes { flex: 1 1 8em; color: var(--text-2); font-size: 0.9rem; }
+
+/* ----------------------------------------------------------- confirm sheet --- */
+dialog {
+  border: 0; border-radius: 16px; padding: 0; width: min(92vw, 420px);
+  background: var(--card); color: var(--text);
+}
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog .body { padding: 22px 20px 8px; }
+dialog h2 { margin: 0 0 8px; font-size: 1.2rem; }
+dialog ul { margin: 10px 0; padding-left: 20px; }
+dialog .actions { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 20px; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 20;
+  background: var(--text); color: var(--card); border-radius: 12px; padding: 12px 16px;
+  font-weight: 600; max-width: 90vw;
+}
+
+/* Windows high-contrast and similar modes: keep controls visible. */
+@media (forced-colors: active) {
+  input[role="switch"] { border-color: ButtonText; }
+  input[role="switch"]::after { background: ButtonText; }
+  input[role="switch"]:checked { background: Highlight; border-color: Highlight; }
+  .segmented input:checked + span, .tabs a[aria-current="page"], .chip[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+  }
+}

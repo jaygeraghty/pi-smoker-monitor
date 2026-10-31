@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Smoker">
+<title>Smoker</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <h1 id="title">Smoker</h1>
+  <p class="connection" id="connection" role="status"></p>
+  <nav class="tabs" aria-label="Pages">
+    <a href="#now" data-tab="now">Now</a>
+    <a href="#probes" data-tab="probes">Probes</a>
+    <a href="#rules" data-tab="rules">Alarm rules</a>
+  </nav>
+</header>
+
+<div class="alerts" id="alerts"></div>
+
+<main id="main" tabindex="-1">
+  <noscript><p class="banner">This page needs JavaScript switched on.</p></noscript>
+  <p class="loading" id="loading">Loading…</p>
+  <section id="view-now" hidden aria-labelledby="title"></section>
+  <section id="view-probes" hidden aria-labelledby="title"></section>
+  <section id="view-rules" hidden aria-labelledby="title"></section>
+</main>
+
+<div class="savebar" id="savebar" hidden>
+  <div class="inner">
+    <p class="changes" id="changeCount" aria-live="polite"></p>
+    <button type="button" class="btn btn-secondary" id="discardButton">Discard</button>
+    <button type="button" class="btn btn-primary" id="saveButton">Save</button>
+  </div>
+</div>
+
+<dialog id="confirm" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+  <div class="body">
+    <h2 id="confirmTitle"></h2>
+    <div id="confirmBody"></div>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-danger" id="confirmYes"></button>
+    <button type="button" class="btn btn-secondary" id="confirmNo" autofocus></button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

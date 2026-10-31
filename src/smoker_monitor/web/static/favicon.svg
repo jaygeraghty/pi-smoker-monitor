@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Smoker monitor">
+  <rect width="64" height="64" rx="14" fill="#1c1c1e"/>
+  <path d="M32 10c3 7 11 11 11 21a11 11 0 0 1-22 0c0-5 2-8 5-12 0 4 2 6 4 6-2-6-1-10 2-15z" fill="#ff9f0a"/>
+  <circle cx="32" cy="40" r="5" fill="#fff"/>
+</svg>

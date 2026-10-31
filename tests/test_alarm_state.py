@@ -15,6 +15,7 @@ from smoker_monitor.domain.alarm_state import (
     AlarmState,
     AlarmStatus,
     key_of,
+    reconcile,
     silence,
     silence_all,
     step,
@@ -188,3 +189,36 @@ def test_restart_forgets_silencing_so_alarms_ring_again() -> None:
     assert not before_restart.sound_on
     after_restart = run([PIT_HOT], [PIT_HOT])  # a brand-new AlarmState
     assert after_restart.sound_on
+
+
+# ------------------------------------------------- rules changed (reconcile) ---
+
+
+def test_reconcile_stops_an_alarm_you_have_just_switched_off_at_once() -> None:
+    ringing = run([PIT_HOT], [PIT_HOT])
+    assert status_of(ringing, PIT_HOT) is AlarmStatus.RINGING
+    assert reconcile(ringing, [], START).tracked == {}
+
+
+def test_reconcile_keeps_an_alarm_that_is_still_wrong_and_does_not_count_it() -> None:
+    ringing = run([PIT_HOT], [PIT_HOT])
+    again = reconcile(ringing, [PIT_HOT], START + POLL)
+    assert again.tracked[key_of(PIT_HOT)].seen == ringing.tracked[key_of(PIT_HOT)].seen
+
+
+def test_reconcile_keeps_a_silenced_alarm_silenced() -> None:
+    silenced = silence_all(run([PIT_HOT], [PIT_HOT]))
+    assert status_of(reconcile(silenced, [PIT_HOT], START), PIT_HOT) is AlarmStatus.SILENCED
+
+
+def test_reconcile_cannot_bring_a_glitch_closer_to_ringing() -> None:
+    once = run([PIT_HOT])
+    for _ in range(5):
+        once = reconcile(once, [PIT_HOT], START)
+    assert status_of(once, PIT_HOT) is AlarmStatus.PENDING
+
+
+def test_reconcile_starts_a_new_alarm_as_pending() -> None:
+    assert status_of(reconcile(AlarmState(), [BRISKET_DONE], START), BRISKET_DONE) is (
+        AlarmStatus.PENDING
+    )

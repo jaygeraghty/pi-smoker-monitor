@@ -33,5 +33,6 @@ Repo layout, tooling (uv, ruff, mypy, pytest, pre-commit), CI, docs.
 - DIY pit-controller Pi as a second `Source` (MQTT)
 - Cook history / graphs
 
-## Web config page
-See [web-config.md](web-config.md) for decisions and build order.
+## Web config page ✅
+Built: see [web.md](web.md). The decisions behind it are in [web-config.md](web-config.md).
+Still to do: systemd units for monitor, screen and web; status file in RAM.
