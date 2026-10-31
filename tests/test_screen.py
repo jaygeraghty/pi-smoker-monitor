@@ -346,6 +346,8 @@ def test_the_dots_beside_the_sources_are_drawn_in_their_colours() -> None:
     status["sources"] = [{"name": "ETI Cloud", "ok": True}, {"name": "Traeger", "ok": False}]
     image = draw_screen(status, written_at(status))
     top_bar = image.crop((WIDTH // 2, 10, WIDTH, 44))
-    colours = {colour for _, colour in top_bar.getcolors(maxcolors=100_000)}
+    counted = top_bar.getcolors(maxcolors=100_000)
+    assert counted is not None
+    colours = {colour for _, colour in counted}
     assert GOOD in colours
     assert ALARM in colours
