@@ -32,3 +32,6 @@ Repo layout, tooling (uv, ruff, mypy, pytest, pre-commit), CI, docs.
 ## Later
 - DIY pit-controller Pi as a second `Source` (MQTT)
 - Cook history / graphs
+
+## Web config page
+See [web-config.md](web-config.md) for decisions and build order.
