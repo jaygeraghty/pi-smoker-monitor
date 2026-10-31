@@ -1,0 +1,21 @@
+# The settings page for your phone (home network only). Installed by deploy/install-services.sh.
+[Unit]
+Description=Smoker web page (settings, for your phone)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+RuntimeDirectory=smoker
+RuntimeDirectoryPreserve=yes
+ExecStart=__DIR__/.venv/bin/smoker web --config __DIR__/config.toml --state-dir __DIR__/state --run-dir /run/smoker
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

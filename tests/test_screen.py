@@ -283,3 +283,71 @@ def test_screen_command_without_a_screen_fails_cleanly(
     code = main(["screen", "--framebuffer", str(tmp_path / "fb9"), "--state-dir", str(tmp_path)])
     assert code == 1
     assert "Can't use the screen" in capsys.readouterr().err
+
+
+# ------------------------------------------------- characters and idle grills ---
+
+
+def drawn_text(
+    monkeypatch: pytest.MonkeyPatch, status: dict[str, Any], seconds: float = 20
+) -> list[str]:
+    """Every piece of text draw_screen puts on the picture."""
+    drawn: list[str] = []
+    real = ImageDraw.ImageDraw.text
+
+    def spy(self: ImageDraw.ImageDraw, xy: Any, text: Any, *args: Any, **kwargs: Any) -> None:
+        drawn.append(str(text))
+        real(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", spy)
+    draw_screen(status, written_at(status, seconds))
+    return drawn
+
+
+def test_only_characters_every_font_has_are_typed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pillow's plain fallback font lacks the dot, arrow and dash: they'd show as boxes."""
+    status = sample()
+    status["sources"][0]["ok"] = False
+    for text in drawn_text(monkeypatch, status):
+        assert all(ord(ch) < 256 or ch == "…" for ch in text), text
+
+
+def grill_status(mode: str, is_on: bool, fresh: bool) -> dict[str, Any]:
+    status = sample()
+    for pit in status["pits"]:
+        if pit["kind"] == "grill":
+            pit.update(mode=mode, is_on=is_on, fresh=fresh, temp_c=None, set_c=None)
+    return status
+
+
+@pytest.mark.parametrize(
+    ("mode", "word"),
+    [("offline", "Offline"), ("idle", "Idle"), ("sleeping", "Sleeping"), ("unknown", "Unknown")],
+)
+def test_a_grill_that_is_off_says_what_it_is_doing(
+    monkeypatch: pytest.MonkeyPatch, mode: str, word: str
+) -> None:
+    text = drawn_text(monkeypatch, grill_status(mode, is_on=False, fresh=False))
+    assert word in text
+
+
+def test_a_lit_grill_that_goes_quiet_still_says_no_recent_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = drawn_text(monkeypatch, grill_status("cooking", is_on=True, fresh=False))
+    assert text.count("no recent data") >= 1
+    assert "Cooking" not in text
+
+
+def test_the_dots_beside_the_sources_are_drawn_in_their_colours() -> None:
+    from smoker_monitor.screen.theme import ALARM, GOOD
+
+    status = sample()
+    status["sources"] = [{"name": "ETI Cloud", "ok": True}, {"name": "Traeger", "ok": False}]
+    image = draw_screen(status, written_at(status))
+    top_bar = image.crop((WIDTH // 2, 10, WIDTH, 44))
+    counted = top_bar.getcolors(maxcolors=100_000)
+    assert counted is not None
+    colours = {colour for _, colour in counted}
+    assert GOOD in colours
+    assert ALARM in colours

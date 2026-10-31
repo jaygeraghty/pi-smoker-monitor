@@ -30,6 +30,15 @@ are picked up within a second, not at the next poll: the alarm rules, your own
 probe limits and probe nicknames all apply to the readings already held. A
 damaged settings file is ignored (the last good settings stay in force).
 
+Silence and end-cook requests, and the status file, live in the "run folder":
+the same as the state folder by default, or somewhere in memory such as
+/run/smoker (see `--run-dir`) so the status file, rewritten every poll, doesn't
+wear out the Pi's SD card. Settings stay in the state folder, because they must
+survive a reboot.
+
+Under systemd, the monitor also tells it that it is alive (service/watchdog.py),
+so a monitor that is stuck, not just crashed, gets restarted.
+
 "End cook" (state/end-cook) makes the monitor forget which probes are in use,
 so a probe you've pulled out stops being waited for. Probes still reporting
 count as in use again straight away.
@@ -59,6 +68,7 @@ from smoker_monitor.service.settings import (
     load_settings,
 )
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
+from smoker_monitor.service.watchdog import NoWatchdog, Watchdog
 from smoker_monitor.sources.base import Source, SourceError
 
 log = logging.getLogger(__name__)
@@ -77,16 +87,16 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def request_silence(state_dir: Path) -> None:
+def request_silence(run_dir: Path) -> None:
     """Ask a running monitor to silence its ringing alarms (what `smoker silence` does)."""
-    state_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / SILENCE_FILE).touch()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / SILENCE_FILE).touch()
 
 
-def request_end_cook(state_dir: Path) -> None:
+def request_end_cook(run_dir: Path) -> None:
     """Ask a running monitor to forget which probes are in use (the web page's End cook)."""
-    state_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / END_COOK_FILE).touch()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / END_COOK_FILE).touch()
 
 
 @dataclass
@@ -123,6 +133,8 @@ class Monitor:
         state_dir: Path,
         clock: Callable[[], datetime] = utc_now,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        run_dir: Path | None = None,
+        watchdog: Watchdog | None = None,
     ) -> None:
         keys = [source.key for source in sources]
         if len(set(keys)) != len(keys):
@@ -133,7 +145,9 @@ class Monitor:
         self.settings = Settings(rules=rules)
         self._settings_stamp: tuple[int, int] | str | None = "unread"
         self.notifier = notifier
-        self.state_dir = state_dir
+        self.state_dir = state_dir  # settings.json: kept across reboots
+        self.run_dir = run_dir or state_dir  # status.json and requests: may be in memory
+        self.watchdog: Watchdog = watchdog or NoWatchdog()
         self.clock = clock
         self.sleep = sleep
 
@@ -147,13 +161,16 @@ class Monitor:
         # Requests left over from before we started are stale.
         self._take_request(SILENCE_FILE)
         self._take_request(END_COOK_FILE)
+        self.watchdog.ready()
         try:
             while True:
+                self.watchdog.ping()
                 try:
                     await self.poll_once()
                 except Exception:
                     # A bug must not kill the monitor: log it and keep polling.
                     log.exception("Poll failed unexpectedly; carrying on")
+                self.watchdog.ping()
                 await self.wait_for_next_poll(self.seconds_until_due())
         finally:
             # Ctrl+C or a stop: close every source's connection cleanly.
@@ -216,6 +233,7 @@ class Monitor:
             step_seconds = min(SILENCE_CHECK_SECONDS, interval_seconds - waited)
             await self.sleep(step_seconds)
             waited += step_seconds
+            self.watchdog.ping()
             if self._take_request(SILENCE_FILE):
                 self.silence()
             if self._take_request(END_COOK_FILE):
@@ -294,7 +312,7 @@ class Monitor:
     def _publish(self, snapshot: Snapshot, now: datetime) -> None:
         """Write the status file and tell the notifier."""
         write_status(
-            self.state_dir / STATUS_FILE,
+            self.run_dir / STATUS_FILE,
             build_status(
                 snapshot, self.state, now, self.rules, custom=self.settings.custom_limits()
             ),
@@ -304,7 +322,7 @@ class Monitor:
 
     def _take_request(self, name: str) -> bool:
         """True (and the request is used up) if someone left the request file `name`."""
-        request = self.state_dir / name
+        request = self.run_dir / name
         if not request.exists():
             return False
         request.unlink(missing_ok=True)

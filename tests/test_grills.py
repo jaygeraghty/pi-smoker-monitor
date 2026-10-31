@@ -228,6 +228,8 @@ def test_cooking_grill_as_a_pit() -> None:
         "id": "traeger:GRILL-1",
         "source": "Traeger",
         "kind": "grill",
+        "mode": "cooking",
+        "is_on": True,
         "name": "Pro 575",
         "fresh": True,
         "last_seen": "2026-10-30T18:00:00+00:00",
