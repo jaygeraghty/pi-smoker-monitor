@@ -28,6 +28,7 @@ Log: `journalctl -u smoker-monitor -f`
 - **Crash:** `Restart=always`, after 5 seconds, with no limit on retries.
 - **Stuck:** the monitor tells systemd it is alive every few seconds
   (`Type=notify`, `WatchdogSec=120`). Silent for 2 minutes, it is restarted.
+- **Same folder everywhere:** once the services are installed, `smoker silence`, `screen` and `web` use `/run/smoker` by default, so they reach the service's monitor.
 - **No data:** if the status file is older than 2 minutes the screen and the
   web page show "Monitor stopped: no alarms!".
 

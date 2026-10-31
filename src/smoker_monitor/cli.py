@@ -46,6 +46,17 @@ EXIT_ALARMS = 2
 # Where the running monitor keeps its status file and silence requests.
 DEFAULT_STATE_DIR = Path("state")
 
+# Where the boot services keep the status file and requests (in memory). When it
+# exists, commands default to it, so `smoker silence` reaches the service's monitor.
+SERVICE_RUN_DIR = Path("/run/smoker")
+
+
+def resolve_run_dir(run_dir: Path | None) -> Path | None:
+    """The run folder given, else the services' if present, else None (use the state folder)."""
+    if run_dir is not None:
+        return run_dir
+    return SERVICE_RUN_DIR if SERVICE_RUN_DIR.is_dir() else None
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="smoker", description="BBQ smoker monitor and alarm")
@@ -126,7 +137,8 @@ def add_run_dir_option(command: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help="Folder for the status file and requests such as silence. A folder in memory "
-        "(e.g. /run/smoker) spares the SD card (default: the same as --state-dir)",
+        "spares the SD card (default: /run/smoker if the boot services are installed, "
+        "else the same as --state-dir)",
     )
 
 
@@ -286,14 +298,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "snapshot":
         return handle_snapshot(args.config)
     if args.command == "run":
-        return handle_run(args.config, args.state_dir, args.run_dir)
+        return handle_run(args.config, args.state_dir, resolve_run_dir(args.run_dir))
     if args.command == "silence":
-        return handle_silence(args.run_dir or args.state_dir)
+        return handle_silence(resolve_run_dir(args.run_dir) or args.state_dir)
     if args.command == "screen":
-        return handle_screen(args.run_dir or args.state_dir, args.framebuffer, args.rotate)
+        return handle_screen(
+            resolve_run_dir(args.run_dir) or args.state_dir,
+            args.framebuffer,
+            args.rotate,
+        )
     if args.command == "web":
         return handle_web(
-            args.config, args.state_dir, args.run_dir, args.host, args.port, args.allow_host
+            args.config,
+            args.state_dir,
+            resolve_run_dir(args.run_dir),
+            args.host,
+            args.port,
+            args.allow_host,
         )
     parser.print_help()
     return EXIT_OK
