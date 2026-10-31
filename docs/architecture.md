@@ -38,6 +38,8 @@ package; nothing imports `cli`.
 | `hardware` | Acknowledge button + LED (gpiozero), with a fake | 3 |
 | `service` | Poll → evaluate → notify loop; writes `state/status.json` for screens | 3 |
 | `screen` | Touchscreen display: draws `state/status.json`, tap to silence. See [screen.md](screen.md) | 4 |
+| `service.settings` | The settings file the web page writes (`state/settings.json`) and the monitor reads | 4 |
+| `web` | `smoker web`: settings page for your phone, home network only. Self-contained folder. See [web.md](web.md) | 4 |
 
 ## Data from ETI Cloud (observed, October 2026)
 

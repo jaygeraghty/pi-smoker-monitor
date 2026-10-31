@@ -251,3 +251,67 @@ def test_snapshot_closes_the_connection_after_a_failure(
     use_source(monkeypatch, FailingSource)
     main(["snapshot", "--config", str(write_config(tmp_path))])
     assert FakeSource.closed
+
+
+def test_web_missing_config_fails_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["web", "--config", str(tmp_path / "nope.toml")])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "Config problem" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_web_serves_until_ctrl_c_and_never_shows_the_password(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from http.server import ThreadingHTTPServer
+
+    def stop_at_once(self: ThreadingHTTPServer, poll_interval: float = 0.5) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ThreadingHTTPServer, "serve_forever", stop_at_once)
+    code = main(
+        [
+            "web",
+            "--config",
+            str(write_config(tmp_path)),
+            "--state-dir",
+            str(tmp_path),
+            "--port",
+            "0",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Settings page: http://" in out
+    assert "home network only" in out
+    assert "Stopped." in out
+    assert "s3cret-pw" not in out
+
+
+def test_web_port_already_in_use_fails_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import socket
+
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        code = main(
+            [
+                "web",
+                "--config",
+                str(write_config(tmp_path)),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "Can't serve on" in captured.err
+    assert "Traceback" not in captured.err

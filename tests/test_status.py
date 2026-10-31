@@ -139,6 +139,8 @@ def test_gateway_as_a_pit() -> None:
         "set_c": 110.0,
         "high_c": 123.9,
         "low_c": 96.1,
+        "high_origin": "eti",
+        "low_origin": "eti",
         "fan": "blowing",
         "fan_output_pct": None,
         "pellet_pct": None,
@@ -206,7 +208,9 @@ def test_probe() -> None:
         "core_c": 68.0,
         "sensors_c": [68.0, None],
         "target_c": 95.0,
+        "target_origin": "eti",
         "low_c": None,
+        "low_origin": "eti",
         "battery_pct": 90,
     }
 

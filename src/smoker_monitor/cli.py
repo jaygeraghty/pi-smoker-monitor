@@ -5,6 +5,7 @@ Commands:
     smoker run        Run the monitor: poll, check alarms, ring until silenced
     smoker silence    Silence whatever a running monitor has ringing
     smoker screen     Show the running monitor's status on the Pi's screen
+    smoker web        Serve the settings page for your phone (home network only)
 
 Exit codes for `smoker snapshot`:
     0  all fine
@@ -19,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import socket
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
@@ -74,6 +76,23 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(90, 270),
         default=90,
         help="Turn the picture this many degrees on a portrait screen (default: 90)",
+    )
+
+    web = commands.add_parser("web", help="Serve the settings page for your phone")
+    add_config_option(web)
+    add_state_dir_option(web)
+    web.add_argument(
+        "--host",
+        default="0.0.0.0",  # on purpose: other devices on your network must reach it
+        help="Address to listen on (default: 0.0.0.0, all of this Pi's network connections)",
+    )
+    web.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
+    web.add_argument(
+        "--allow-host",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Another name the page may be reached by (can be repeated)",
     )
     return parser
 
@@ -201,6 +220,44 @@ def handle_screen(state_dir: Path, framebuffer: Path, rotate: int) -> int:
     return EXIT_OK
 
 
+def handle_web(
+    config_path: Path, state_dir: Path, host: str, port: int, allow_hosts: Sequence[str]
+) -> int:
+    """Serve the settings page until Ctrl+C. Returns an exit code."""
+    # Imported here so the other commands don't load the web server.
+    from smoker_monitor.web.api import WebApp, WebInfo
+    from smoker_monitor.web.server import make_server
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as e:
+        print(f"Config problem: {e}", file=sys.stderr)
+        return EXIT_FAILED
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    info = WebInfo(
+        base_rules=config.alarms,
+        has_eti=config.eti_cloud is not None,
+        has_traeger=config.traeger_mqtt is not None,
+    )
+    try:
+        server = make_server(WebApp(state_dir, info, allow_hosts), host, port)
+    except OSError as e:
+        print(f"Can't serve on {host}:{port}: {e.strerror or e}", file=sys.stderr)
+        return EXIT_FAILED
+    print(
+        f"Settings page: http://{socket.gethostname()}.local:{port}  "
+        "(home network only). Ctrl+C to stop."
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
+    finally:
+        server.server_close()
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -212,5 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return handle_silence(args.state_dir)
     if args.command == "screen":
         return handle_screen(args.state_dir, args.framebuffer, args.rotate)
+    if args.command == "web":
+        return handle_web(args.config, args.state_dir, args.host, args.port, args.allow_host)
     parser.print_help()
     return EXIT_OK

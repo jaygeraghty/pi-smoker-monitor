@@ -235,6 +235,8 @@ def test_cooking_grill_as_a_pit() -> None:
         "set_c": 110.0,
         "high_c": 124.0,
         "low_c": 96.0,
+        "high_origin": None,
+        "low_origin": None,
         "fan": None,
         "fan_output_pct": None,
         "pellet_pct": 80,

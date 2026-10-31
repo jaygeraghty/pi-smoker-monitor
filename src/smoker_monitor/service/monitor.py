@@ -23,7 +23,16 @@ a quiet Gateway from a quiet internet. Instead, once it has failed for
 source failing never stops the others being watched.
 
 Silence requests are a file (state/silence) so that anything can make one:
-the `smoker silence` command now, the screen's button later.
+the `smoker silence` command, the web page's button, a tap on the screen.
+
+Settings changed on the web page (state/settings.json, see service/settings.py)
+are picked up within a second, not at the next poll: the alarm rules, your own
+probe limits and probe nicknames all apply to the readings already held. A
+damaged settings file is ignored (the last good settings stay in force).
+
+"End cook" (state/end-cook) makes the monitor forget which probes are in use,
+so a probe you've pulled out stops being waited for. Probes still reporting
+count as in use again straight away.
 """
 
 from __future__ import annotations
@@ -35,19 +44,27 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from smoker_monitor.domain.alarm_state import AlarmState, silence_all, step
+from smoker_monitor.domain.alarm_state import AlarmState, reconcile, silence_all, step
 from smoker_monitor.domain.alarms import AlarmRules, evaluate, fresh_probes, is_fresh
 from smoker_monitor.domain.models import Probe, Snapshot, SourceHealth
 from smoker_monitor.domain.names import gateway_names, grill_names, probe_names
 from smoker_monitor.notifiers.base import Notifier
 from smoker_monitor.report import describe_alarm
 from smoker_monitor.service.combine import combine, keep_vanished_probes
+from smoker_monitor.service.settings import (
+    SETTINGS_FILE,
+    Settings,
+    SettingsError,
+    apply_nicknames,
+    load_settings,
+)
 from smoker_monitor.service.status import STATUS_FILE, build_status, write_status
 from smoker_monitor.sources.base import Source, SourceError
 
 log = logging.getLogger(__name__)
 
 SILENCE_FILE = "silence"
+END_COOK_FILE = "end-cook"
 
 # How often to check for a silence request between polls.
 SILENCE_CHECK_SECONDS = 1.0
@@ -64,6 +81,12 @@ def request_silence(state_dir: Path) -> None:
     """Ask a running monitor to silence its ringing alarms (what `smoker silence` does)."""
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / SILENCE_FILE).touch()
+
+
+def request_end_cook(state_dir: Path) -> None:
+    """Ask a running monitor to forget which probes are in use (the web page's End cook)."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / END_COOK_FILE).touch()
 
 
 @dataclass
@@ -105,7 +128,10 @@ class Monitor:
         if len(set(keys)) != len(keys):
             raise ValueError(f"Two sources share a key: {keys}")
         self.states = [SourceState(source) for source in sources]
-        self.rules = rules
+        self.base_rules = rules  # from config.toml; settings.json changes sit on top
+        self.rules = rules  # the rules in force
+        self.settings = Settings(rules=rules)
+        self._settings_stamp: tuple[int, int] | str | None = "unread"
         self.notifier = notifier
         self.state_dir = state_dir
         self.clock = clock
@@ -118,8 +144,9 @@ class Monitor:
 
     async def run_forever(self) -> None:
         """Poll, then wait (watching for silence), forever. Stop with Ctrl+C."""
-        # A silence request left over from before we started is stale.
-        self._take_silence_request()
+        # Requests left over from before we started are stale.
+        self._take_request(SILENCE_FILE)
+        self._take_request(END_COOK_FILE)
         try:
             while True:
                 try:
@@ -136,22 +163,42 @@ class Monitor:
     async def poll_once(self) -> AlarmState:
         """Fetch from every source that's due, then check alarms. Returns the new alarm state."""
         now = self.clock()
+        self._refresh_settings()
         due = [state for state in self.states if state.is_due(now)]
         await asyncio.gather(*(self._fetch(state, now) for state in due))
 
+        snapshot = self._assess(now, new_poll=True)
+        log.info("%s", summary(snapshot, self.state, now, self.rules))
+        return self.state
+
+    def _assess(self, now: datetime, new_poll: bool = False) -> Snapshot:
+        """Judge the readings held now (no fetching), then publish the result.
+
+        Used after every poll (`new_poll`), and again straight away when
+        settings change or a cook ends, so those take effect without waiting
+        for the next poll. Only a real poll counts towards an alarm ringing or
+        clearing; a re-check just applies the new rules (see alarm_state.reconcile).
+        """
         snapshot = combine(now, [(state.health(), state.last_good) for state in self.states])
         self.live_probes |= fresh_probes(snapshot, now, self.rules)
         self.remembered_probes.update(
             (probe.id, probe) for probe in snapshot.probes if probe.id in self.live_probes
         )
         snapshot = keep_vanished_probes(snapshot, self.remembered_probes, self.live_probes)
+        snapshot = apply_nicknames(snapshot, self.settings)
         self.snapshot = snapshot
-        alarms = evaluate(snapshot, now, self.rules, live_probes=self.live_probes)
-        self.state = step(self.state, alarms, now)
-
+        alarms = evaluate(
+            snapshot,
+            now,
+            self.rules,
+            custom=self.settings.custom_limits(),
+            live_probes=self.live_probes,
+        )
+        self.state = (
+            step(self.state, alarms, now) if new_poll else reconcile(self.state, alarms, now)
+        )
         self._publish(snapshot, now)
-        log.info("%s", summary(snapshot, self.state, now, self.rules))
-        return self.state
+        return snapshot
 
     def seconds_until_due(self) -> float:
         """How long until the next source is due (at least MIN_WAIT_SECONDS)."""
@@ -169,8 +216,12 @@ class Monitor:
             step_seconds = min(SILENCE_CHECK_SECONDS, interval_seconds - waited)
             await self.sleep(step_seconds)
             waited += step_seconds
-            if self._take_silence_request():
+            if self._take_request(SILENCE_FILE):
                 self.silence()
+            if self._take_request(END_COOK_FILE):
+                self.end_cook()
+            if self._refresh_settings() and self.snapshot is not None:
+                self._assess(self.clock())
 
     def silence(self) -> None:
         """Silence everything that's ringing, and update the notifier and status at once."""
@@ -181,7 +232,40 @@ class Monitor:
             self.notifier.update(self.state, [])
         log.info("Silenced")
 
+    def end_cook(self) -> None:
+        """Forget which probes are in use. Ones still reporting are in use again at once."""
+        self.live_probes.clear()
+        self.remembered_probes.clear()
+        if self.snapshot is not None:
+            self._assess(self.clock())
+        log.info("Cook ended: forgot which probes were in use")
+
     # ------------------------------------------------------------ helpers ---
+
+    def _refresh_settings(self) -> bool:
+        """Pick up changes to settings.json. True if new settings are now in force.
+
+        A damaged file is logged once and ignored: the last good settings stay.
+        """
+        path = self.state_dir / SETTINGS_FILE
+        try:
+            stat = path.stat()
+            stamp: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            stamp = None
+        if stamp == self._settings_stamp:
+            return False
+        first_look = self._settings_stamp == "unread"
+        self._settings_stamp = stamp
+        try:
+            self.settings = load_settings(path, self.base_rules)
+        except SettingsError as e:
+            log.warning("Ignoring settings file, keeping the last good settings: %s", e)
+            return False
+        self.rules = self.settings.rules
+        if not first_look:
+            log.info("Settings changed (revision %d)", self.settings.revision)
+        return True
 
     async def _fetch(self, state: SourceState, now: datetime) -> None:
         """Fetch from one source, remembering the result or why it failed.
@@ -211,14 +295,16 @@ class Monitor:
         """Write the status file and tell the notifier."""
         write_status(
             self.state_dir / STATUS_FILE,
-            build_status(snapshot, self.state, now, self.rules),
+            build_status(
+                snapshot, self.state, now, self.rules, custom=self.settings.custom_limits()
+            ),
         )
         messages = [describe_alarm(t.alarm, snapshot) for t in self.state.ringing]
         self.notifier.update(self.state, messages)
 
-    def _take_silence_request(self) -> bool:
-        """True (and the request is used up) if someone asked for silence."""
-        request = self.state_dir / SILENCE_FILE
+    def _take_request(self, name: str) -> bool:
+        """True (and the request is used up) if someone left the request file `name`."""
+        request = self.state_dir / name
         if not request.exists():
             return False
         request.unlink(missing_ok=True)
