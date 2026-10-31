@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import socket
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ DEPLOY = Path(__file__).parent.parent / "deploy"
 
 
 @pytest.fixture
-def listener(tmp_path: Path):
+def listener(tmp_path: Path) -> Iterator[tuple[socket.socket, str]]:
     path = tmp_path / "notify.sock"
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     sock.bind(str(path))
